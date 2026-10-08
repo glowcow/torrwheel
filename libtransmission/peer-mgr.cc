@@ -1313,11 +1313,17 @@ void tr_peerMgrFree(tr_peerMgr* manager)
 std::vector<tr_block_span_t> tr_peerMgrGetNextRequests(tr_torrent* torrent, tr_peer const* peer, size_t numwant)
 {
     TR_ASSERT(!torrent->is_done());
-    tr_swarm const& swarm = *torrent->swarm;
-    TR_ASSERT(swarm.wishlist);
+    tr_swarm& swarm = *torrent->swarm;
+    // torrwheel: the wishlist is dropped when a torrent is done, and picking
+    // more files makes a running torrent a leech again without a restart
     if (!swarm.wishlist)
     {
-        return {};
+        if (!swarm.is_running)
+        {
+            return {};
+        }
+
+        swarm.wishlist = std::make_unique<Wishlist>(swarm.wishlist_mediator);
     }
     return swarm.wishlist->next(numwant, [peer](tr_piece_index_t p) { return peer->has_piece(p); });
 }
