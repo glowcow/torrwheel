@@ -3,14 +3,15 @@
 # torrwheel
 
 A fork of [Transmission](https://github.com/transmission/transmission) for a
-home server: the daemon only, with one change in where a torrent's files are
-kept while it downloads.
+home server: the daemon only, with two changes — where a torrent's files are
+kept while it downloads, and a fix for downloads that stall after a file pick.
 
 ## Contents
 
 - [What it is](#what-it-is)
 - [What differs from Transmission](#what-differs-from-transmission)
   - [File placement](#file-placement)
+  - [Downloading after a file pick](#downloading-after-a-file-pick)
   - [The tree](#the-tree)
 - [Image](#image)
   - [Quick start](#quick-start)
@@ -58,6 +59,17 @@ it and removing it with its data act on both directories.
 The change is in `libtransmission/torrent.cc` and `torrent-files.cc`; its
 tests are `tests/libtransmission/torrwheel-test.cc`.
 
+### Downloading after a file pick
+
+Transmission 4.1.3 drops its list of pieces to request when a torrent becomes
+done and builds it again only when the torrent is started. A running torrent
+that turns from done back to downloading — every file unticked and some
+ticked again, or more files picked on a finished partial torrent — stays
+connected to its peers and requests nothing until it is stopped and started.
+
+torrwheel builds the list on the next request, as Transmission did before
+4.1. The change is in `libtransmission/peer-mgr.cc`.
+
 ### The tree
 
 Upstream carries every client. Here only the daemon is left: the macOS, Qt,
@@ -77,7 +89,7 @@ docker run -d --name torrwheel \
   -v "$PWD/config:/etc/transmission-daemon" \
   -v "$PWD/downloads:/Downloads" \
   -v "$PWD/incomplete:/Incomplete" \
-  glowcow/torrwheel:v4.1.3-1
+  glowcow/torrwheel:v4.1.3-2
 ```
 
 The three directories must be writable by uid `100`. The first start writes a
