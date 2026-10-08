@@ -1,101 +1,137 @@
-## About
+<p align="center"><img src="icon.svg" width="128" alt="torrwheel"></p>
 
-Transmission is a fast, easy, and free BitTorrent client. It comes in several flavors:
-  * A native macOS GUI application
-  * GTK+ and Qt GUI applications for Linux, BSD, etc.
-  * A Qt-based Windows-compatible GUI application
-  * A headless daemon for servers and routers
-  * A web UI for remote controlling any of the above
-  
-Visit https://transmissionbt.com/ for more information.
+# torrwheel
 
-## Documentation
+A fork of [Transmission](https://github.com/transmission/transmission) for a
+home server: the daemon only, with one change in where a torrent's files are
+kept while it downloads.
 
-[Transmission's documentation](docs/README.md) is currently out-of-date, but the team has recently begun a new project to update it and is looking for volunteers. If you're interested, please feel free to submit pull requests!
+## Contents
 
-## Command line interface notes
+- [What it is](#what-it-is)
+- [What differs from Transmission](#what-differs-from-transmission)
+  - [File placement](#file-placement)
+  - [The tree](#the-tree)
+- [Image](#image)
+  - [Quick start](#quick-start)
+  - [What the image holds](#what-the-image-holds)
+- [Build](#build)
+- [Versions](#versions)
+- [Following upstream](#following-upstream)
+- [License](#license)
 
-Transmission is fully supported in transmission-remote, the preferred cli client.
+## What it is
 
-Three standalone tools to examine, create, and edit .torrent files exist: transmission-show, transmission-create, and transmission-edit, respectively.
+`transmission-daemon` 4.1.3 with its RPC, its settings and its web UI, built
+from this branch. Towards peers and trackers it is Transmission 4.1.3: the
+peer id and the user agent are untouched. Existing `settings.json`, resume
+files and RPC clients keep working.
 
-Prior to development of transmission-remote, the standalone client transmission-cli was created. Limited to a single torrent at a time, transmission-cli is deprecated and exists primarily to support older hardware dependent upon it. In almost all instances, transmission-remote should be used instead.
+`main` is upstream's branch and is never committed to; everything of the fork
+is on `torrwheel`, so `main...torrwheel` is the whole difference.
 
-Different distributions may choose to package any or all of these tools in one or more separate packages.
+## What differs from Transmission
 
-## Building
+### File placement
 
-Transmission has an Xcode project file (Transmission.xcodeproj) for building in Xcode.
+With `incomplete-dir` enabled, Transmission downloads into the incomplete
+directory and moves the torrent to `download-dir` once it is done. "Done"
+counts wanted files only, so a torrent with some files unticked is done as
+soon as the ticked ones are — and a torrent with every file unticked is done
+at once. From then on it lives in `download-dir`, and files ticked later are
+downloaded straight into it. On a setup where the incomplete directory is the
+fast disk and `download-dir` is the slow one, that puts random writes exactly
+where they were to be avoided.
 
-For a more detailed description, and dependencies, visit [How to Build Transmission](docs/Building-Transmission.md) in docs
+torrwheel keeps the rule per file:
 
-### Building a Transmission release from the command line
+- a file stays in the incomplete directory until it is complete;
+- when the torrent is done, only its complete files move to `download-dir`;
+- files ticked later are downloaded in the incomplete directory and move when
+  they are complete;
+- a torrent with nothing complete moves nothing.
+
+A file that is already in `download-dir` stays there, also when it is
+unfinished: nothing is ever moved back. Moving a torrent, renaming a path in
+it and removing it with its data act on both directories.
+
+The change is in `libtransmission/torrent.cc` and `torrent-files.cc`; its
+tests are `tests/libtransmission/torrwheel-test.cc`.
+
+### The tree
+
+Upstream carries every client. Here only the daemon is left: the macOS, Qt,
+GTK and command-line clients, the translations, the release tooling and the
+documentation except `docs/rpc-spec.md` are removed by
+[`prune-upstream.sh`](prune-upstream.sh), which holds the list.
+
+## Image
+
+`glowcow/torrwheel` on Docker Hub, `linux/amd64`, Alpine.
+
+### Quick start
 
 ```bash
-$ tar xf transmission-4.0.6.tar.xz
-$ cd transmission-4.0.6
-# Use -DCMAKE_BUILD_TYPE=RelWithDebInfo to build optimized binary with debug information. (preferred)
-# Use -DCMAKE_BUILD_TYPE=Release to build full optimized binary.
-$ cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-$ cd build
-$ cmake --build .
-$ sudo cmake --install .
+docker run -d --name torrwheel \
+  -p 9091:9091 -p 51413:51413 -p 51413:51413/udp \
+  -v "$PWD/config:/etc/transmission-daemon" \
+  -v "$PWD/downloads:/Downloads" \
+  -v "$PWD/incomplete:/Incomplete" \
+  glowcow/torrwheel:v4.1.3-1
 ```
 
-### Building Transmission from the nightly builds
+The three directories must be writable by uid `100`. The first start writes a
+default `settings.json`. Edit it only while the daemon is stopped — it
+rewrites the file on exit: set `download-dir`, `incomplete-dir` and
+`incomplete-dir-enabled`, and add your network to `rpc-whitelist` to reach
+the web UI on port 9091.
 
-Download a tarball from https://build.transmissionbt.com/job/trunk-linux/ and follow the steps from the previous section.
+### What the image holds
 
-If you're new to building programs from source code, this is typically easier than building from Git.
+- `transmission-daemon`, started as
+  `transmission-daemon -f --log-level=info -g /etc/transmission-daemon`;
+- `transmission-remote`, `transmission-create`, `transmission-edit`,
+  `transmission-show`;
+- the web UI in `/usr/share/transmission/public_html`;
+- the user `debian-transmission` (uid `100`, gid `101`) — the name and ids of
+  Debian's package, so a config directory made for it is taken over as it is;
+- a health check: a TCP probe of port 9091.
 
-### Building Transmission from Git (first time)
+## Build
+
+The submodules under `third-party/` are part of the build:
 
 ```bash
-$ git clone --recurse-submodules https://github.com/transmission/transmission Transmission
-$ cd Transmission
-# Use -DCMAKE_BUILD_TYPE=RelWithDebInfo to build optimized binary with debug information. (preferred)
-# Use -DCMAKE_BUILD_TYPE=Release to build full optimized binary.
-$ cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-$ cd build
-$ cmake --build .
-$ sudo cmake --install .
+git submodule update --init --recursive --depth 1
+docker build -t torrwheel:dev .
 ```
 
-### Building Transmission from Git (updating)
+The build runs the whole test suite; a failing test fails the image. Build
+arguments: `VERSION` (shown by the daemon as `4.1.3 (<VERSION>)`),
+`BUILD_JOBS` (parallel compile and test jobs, every core by default) and
+`ALPINE_VERSION`.
+
+## Versions
+
+A release is the upstream version plus the fork's own counter: `v4.1.3-1`,
+`v4.1.3-2`, then `v4.1.4-1`. The image carries the same tag. Tags without the
+`v` are upstream's.
+
+## Following upstream
+
+A new release of the same line is merged, then pruned again:
 
 ```bash
-$ cd Transmission/build
-$ cmake --build . -t clean
-$ git submodule foreach --recursive git clean -xfd
-$ git pull --rebase --prune
-$ git submodule update --init --recursive
-$ cmake --build .
-$ sudo cmake --install .
+git fetch upstream --tags
+git merge 4.1.4
+./prune-upstream.sh
 ```
 
-## Contributing
+Files upstream changed under a removed path come up as conflicts, and the
+script settles them by removing the paths again. Only files changed on both
+sides are left to resolve by hand.
 
-### Code Style
+## License
 
-You would want to setup your editor to make use of the .clang-format file located in the root of this repository and the eslint/prettier rules in web/package.json.
-
-If for some reason you are unwilling or unable to do so, there is a shell script which you can use: `./code_style.sh`
-
-### Translations
-
-See [language translations](docs/Translating.md).
-
-## Sponsors
-
-<table>
- <tbody>
-  <tr>
-   <td align="center"><img alt="[MacStadium]" src="https://uploads-ssl.webflow.com/5ac3c046c82724970fc60918/5c019d917bba312af7553b49_MacStadium-developerlogo.png" height="30"/></td>
-   <td>macOS CI builds are running on a M1 Mac Mini provided by <a href="https://www.macstadium.com/company/opensource">MacStadium</a></td>
-  </tr>
-  <tr>
-   <td align="center"><img alt="[SignPath]" src="https://avatars.githubusercontent.com/u/34448643" height="30"/></td>
-   <td>Free code signing on Windows provided by <a href="https://signpath.io/?utm_source=foundation&utm_medium=github&utm_campaign=transmission">SignPath.io</a>, certificate by <a href="https://signpath.org/?utm_source=foundation&utm_medium=github&utm_campaign=transmission">SignPath Foundation</a></td>
-  </tr>
- </tbody>
-</table>
+Transmission's terms, unchanged: GNU GPL v2 or v3, see [`COPYING`](COPYING).
+The fork's own changes are under the same terms.

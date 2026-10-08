@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="A rim of twelve pieces: eight downloaded, one in progress, three empty">
+<rect width="512" height="512" fill="#16181d"></rect>
+<g stroke="#3a3f4a" stroke-width="16" stroke-linecap="round">
+<line x1="256" y1="210" x2="256" y2="136"></line>
+<line x1="256" y1="210" x2="256" y2="136" transform="rotate(90 256 256)"></line>
+<line x1="256" y1="210" x2="256" y2="136" transform="rotate(180 256 256)"></line>
+<line x1="256" y1="210" x2="256" y2="136" transform="rotate(270 256 256)"></line>
+</g>
+<g fill="none" stroke-width="40" transform="rotate(-87 256 256)">
+<circle cx="256" cy="256" r="150" pathLength="12" stroke="#3a3f4a" stroke-dasharray="0.8 0.2"></circle>
+<circle cx="256" cy="256" r="150" pathLength="12" stroke="#ff6b3d" stroke-dasharray="0.8 0.2 0.8 0.2 0.8 0.2 0.8 0.2 0.8 0.2 0.8 0.2 0.8 0.2 0.8 4.2"></circle>
+<circle cx="256" cy="256" r="150" pathLength="12" stroke="#f2b84b" stroke-dasharray="0 8 0.8 3.2"></circle>
+</g>
+<circle cx="256" cy="256" r="46" fill="#2f8f7b"></circle>
+<circle cx="256" cy="256" r="16" fill="#16181d"></circle>
+</svg>
