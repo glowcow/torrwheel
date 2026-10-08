@@ -93,8 +93,9 @@ the web UI on port 9091.
 - `transmission-remote`, `transmission-create`, `transmission-edit`,
   `transmission-show`;
 - the web UI in `/usr/share/transmission/public_html`;
-- the user `debian-transmission` (uid `100`, gid `101`) — the name and ids of
-  Debian's package, so a config directory made for it is taken over as it is;
+- the user `torrwheel` (uid `100`, gid `101`) — the ids of Debian's
+  `transmission-daemon` package, so a config directory made for it is taken
+  over as it is;
 - a health check: a TCP probe of port 9091.
 
 ## Build
@@ -106,8 +107,13 @@ git submodule update --init --recursive --depth 1
 docker build -t torrwheel:dev .
 ```
 
-The build runs the whole test suite; a failing test fails the image. Build
-arguments: `VERSION` (shown by the daemon as `4.1.3 (<VERSION>)`),
+The test suite is a stage of its own, built on the same compiled tree:
+
+```bash
+docker build --target test -t torrwheel:test .
+```
+
+Build arguments: `VERSION` (shown by the daemon as `4.1.3 (<VERSION>)`),
 `BUILD_JOBS` (parallel compile and test jobs, every core by default) and
 `ALPINE_VERSION`.
 

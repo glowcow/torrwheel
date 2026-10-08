@@ -19,21 +19,24 @@ RUN echo "${VERSION}" > REVISION \
        -DUSE_SYSTEM_MINIUPNPC=OFF -DUSE_SYSTEM_NATPMP=OFF -DUSE_SYSTEM_UTP=OFF \
        -DUSE_SYSTEM_B64=OFF -DUSE_SYSTEM_PSL=ON \
     && cmake --build /build ${BUILD_JOBS:+-j "$BUILD_JOBS"}
-# A failed test fails the image; the retry is for the timing-sensitive ones.
-RUN ctest --test-dir /build -j "${BUILD_JOBS:-$(nproc)}" --output-on-failure --repeat until-pass:2
 RUN DESTDIR=/out cmake --install /build --strip
 
+# Built with --target test; the image below does not depend on it.
+FROM build AS test
+# The retry is for the timing-sensitive tests.
+RUN ctest --test-dir /build -j "${BUILD_JOBS:-$(nproc)}" --output-on-failure --repeat until-pass:2
+
 FROM alpine:${ALPINE_VERSION}
-# Name, uid and gid of Debian's transmission-daemon package: the config volume belongs to them.
+# uid and gid of Debian's transmission-daemon package: a config volume made for it is taken over.
 RUN apk add --no-cache libcurl libpsl libstdc++ ca-certificates \
-    && addgroup -S -g 101 debian-transmission \
-    && adduser -S -D -H -u 100 -G debian-transmission -h /var/lib/transmission-daemon \
-       -s /sbin/nologin debian-transmission \
-    && install -d -o debian-transmission -g debian-transmission \
+    && addgroup -S -g 101 torrwheel \
+    && adduser -S -D -H -u 100 -G torrwheel -h /var/lib/transmission-daemon \
+       -s /sbin/nologin torrwheel \
+    && install -d -o torrwheel -g torrwheel \
        /etc/transmission-daemon /var/lib/transmission-daemon
 COPY --from=build /out/ /
 EXPOSE 9091
-USER debian-transmission
+USER torrwheel
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD nc -z 127.0.0.1 9091 || exit 1
 ENTRYPOINT ["/usr/bin/transmission-daemon"]
