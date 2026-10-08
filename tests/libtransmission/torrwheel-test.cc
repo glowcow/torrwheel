@@ -49,7 +49,11 @@ protected:
         tr_torrentSetFileDLs(tor, &file, 1, wanted);
     }
 
-    [[nodiscard]] bool waitForFile(tr_torrent const* tor, tr_file_index_t file, std::string_view dir, std::string_view suffix = ""sv)
+    [[nodiscard]] bool waitForFile(
+        tr_torrent const* tor,
+        tr_file_index_t file,
+        std::string_view dir,
+        std::string_view suffix = ""sv)
     {
         auto const expected = tr_pathbuf{ dir, '/', tr_torrentFile(tor, file).name, suffix };
         return waitFor([&]() { return expected == tr_torrentFindFile(tor, file); }, MaxWaitMsec);
