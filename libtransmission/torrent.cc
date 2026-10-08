@@ -402,7 +402,8 @@ void torrentCallScript(tr_torrent const* tor, std::string const& script)
 
     auto const now = tr_time();
 
-    auto torrent_dir = tr_pathbuf{ tor->current_dir() };
+    // torrwheel: a partial seed keeps writing to the incomplete dir, its finished files are elsewhere
+    auto torrent_dir = tr_pathbuf{ tor->is_done() ? tor->download_dir() : tor->current_dir() };
     tr_sys_path_native_separators(std::data(torrent_dir));
 
     auto const cmd = std::array<char const*, 2>{ script.c_str(), nullptr };
@@ -747,6 +748,11 @@ void tr_torrentRemoveInSessionThread(tr_torrent* tor, bool delete_flag, tr_fileF
 
         auto error = tr_error{};
         tor->files().remove(tor->current_dir(), tor->name(), delete_func_wrapper, &error);
+        // torrwheel: a partly downloaded torrent has files in both dirs
+        if (!error && tor->current_dir() != tor->download_dir())
+        {
+            tor->files().remove(tor->download_dir(), tor->name(), delete_func_wrapper, &error);
+        }
         if (error)
         {
             tr_logAddWarnTor(
@@ -1110,6 +1116,11 @@ void tr_torrent::set_location_in_session_thread(std::string_view const path, boo
 
         auto error = tr_error{};
         ok = files().move(current_dir(), path, name(), &error);
+        // torrwheel: a partly downloaded torrent has files in both dirs
+        if (ok && current_dir() != download_dir())
+        {
+            ok = files().move(download_dir(), path, name(), &error);
+        }
         if (error)
         {
             this->error().set_local_error(
@@ -1163,6 +1174,37 @@ size_t buildSearchPathArray(tr_torrent const* tor, std::string_view* paths)
 }
 } // namespace location_helpers
 } // namespace
+
+// torrwheel: a torrent done by file selection only moves its finished files;
+// the rest, and whatever is picked later, stays in the incomplete dir.
+void tr_torrent::move_completed_files()
+{
+    session->run_in_session_thread(
+        [this]()
+        {
+            session->close_torrent_files(id());
+            session->verify_remove(this);
+
+            auto const is_complete = [this](tr_file_index_t file)
+            {
+                return has_file(file);
+            };
+
+            auto error = tr_error{};
+            files().move(incomplete_dir(), download_dir(), name(), &error, is_complete);
+            if (error)
+            {
+                this->error().set_local_error(
+                    fmt::format(
+                        fmt::runtime(_("Couldn't move '{old_path}' to '{path}': {error} ({error_code})")),
+                        fmt::arg("old_path", incomplete_dir()),
+                        fmt::arg("path", download_dir()),
+                        fmt::arg("error", error.message()),
+                        fmt::arg("error_code", error.code())));
+                tr_torrentStop(this);
+            }
+        });
+}
 
 void tr_torrent::set_location(std::string_view location, bool move_from_old_path, int volatile* setme_state)
 {
@@ -1843,7 +1885,14 @@ void tr_torrent::recheck_completeness()
 
             if (current_dir() == incomplete_dir())
             {
-                set_location(download_dir(), true, nullptr);
+                if (completeness_ == TR_SEED)
+                {
+                    set_location(download_dir(), true, nullptr);
+                }
+                else
+                {
+                    move_completed_files();
+                }
             }
 
             done_.emit(this, recent_change);
@@ -2298,6 +2347,10 @@ void tr_torrent::refresh_current_dir()
     {
         dir = incomplete_dir();
     }
+    else if (completion_.status() != TR_SEED) // torrwheel: whatever is still to come is written there
+    {
+        dir = incomplete_dir();
+    }
     else
     {
         auto const found = find_file(0);
@@ -2364,11 +2417,9 @@ auto renameFindAffectedFiles(tr_torrent const* tor, std::string_view oldpath)
     return indices;
 }
 
-int renamePath(tr_torrent const* tor, std::string_view oldpath, std::string_view newname)
+int renamePathIn(std::string_view base, std::string_view oldpath, std::string_view newname)
 {
     int err = 0;
-
-    auto const base = tor->is_done() || std::empty(tor->incomplete_dir()) ? tor->download_dir() : tor->incomplete_dir();
 
     auto src = tr_pathbuf{ base, '/', oldpath };
 
@@ -2399,6 +2450,19 @@ int renamePath(tr_torrent const* tor, std::string_view oldpath, std::string_view
 
             errno = tmp;
         }
+    }
+
+    return err;
+}
+
+// torrwheel: a partly downloaded torrent has files in both dirs
+int renamePath(tr_torrent const* tor, std::string_view oldpath, std::string_view newname)
+{
+    auto err = renamePathIn(tor->download_dir(), oldpath, newname);
+
+    if (err == 0 && !std::empty(tor->incomplete_dir()) && tor->incomplete_dir() != tor->download_dir())
+    {
+        err = renamePathIn(tor->incomplete_dir(), oldpath, newname);
     }
 
     return err;

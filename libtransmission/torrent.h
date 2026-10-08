@@ -1325,6 +1325,7 @@ private:
     void update_file_path(tr_file_index_t file, std::optional<bool> has_file) const;
 
     void set_location_in_session_thread(std::string_view path, bool move_from_old_path, int volatile* setme_state);
+    void move_completed_files();
 
     void rename_path_in_session_thread(
         std::string_view oldpath,

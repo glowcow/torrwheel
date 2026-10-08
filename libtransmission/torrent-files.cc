@@ -188,7 +188,8 @@ bool tr_torrent_files::move(
     std::string_view old_parent_in,
     std::string_view parent_in,
     std::string_view parent_name,
-    tr_error* error) const
+    tr_error* error,
+    FilePredicate const& should_move) const
 {
     auto const old_parent = tr_pathbuf{ old_parent_in };
     auto const parent = tr_pathbuf{ parent_in };
@@ -210,6 +211,11 @@ bool tr_torrent_files::move(
 
     for (tr_file_index_t i = 0, n = file_count(); i < n; ++i)
     {
+        if (should_move && !should_move(i))
+        {
+            continue;
+        }
+
         auto const found = find(i, std::data(paths), std::size(paths));
         if (!found)
         {
@@ -231,10 +237,20 @@ bool tr_torrent_files::move(
             err = true;
             break;
         }
+
+        // torrwheel: the files left behind rule out remove() below, so tidy up per file
+        if (should_move)
+        {
+            auto dir = tr_pathbuf{ old_path };
+            while (dir.popdir() && std::size(dir) > std::size(old_parent) && is_empty_folder(dir))
+            {
+                tr_sys_path_remove(dir, nullptr);
+            }
+        }
     }
 
     // after moving the files, remove any leftover empty directories
-    if (!err)
+    if (!err && !should_move)
     {
         auto const remove_empty_directories = [](char const* filename)
         {

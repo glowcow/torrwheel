@@ -110,11 +110,14 @@ public:
         return ret;
     }
 
+    // torrwheel: with `should_move`, only the files it accepts are moved
+    using FilePredicate = std::function<bool(tr_file_index_t)>;
     bool move(
         std::string_view old_parent_in,
         std::string_view parent_in,
         std::string_view parent_name = "",
-        tr_error* error = nullptr) const;
+        tr_error* error = nullptr,
+        FilePredicate const& should_move = {}) const;
 
     using FileFunc = std::function<void(char const* filename)>;
     void remove(std::string_view parent_in, std::string_view tmpdir_prefix, FileFunc const& func, tr_error* error = nullptr)
