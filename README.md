@@ -3,8 +3,9 @@
 # torrwheel
 
 A fork of [Transmission](https://github.com/transmission/transmission) for a
-home server: the daemon only, with two changes — where a torrent's files are
-kept while it downloads, and a fix for downloads that stall after a file pick.
+home server: the daemon and a web UI of its own. The daemon differs in where
+a torrent's files are kept while it downloads and in a fix for downloads that
+stall after a file pick.
 
 ## Contents
 
@@ -12,21 +13,25 @@ kept while it downloads, and a fix for downloads that stall after a file pick.
 - [What differs from Transmission](#what-differs-from-transmission)
   - [File placement](#file-placement)
   - [Downloading after a file pick](#downloading-after-a-file-pick)
+  - [Web UI](#web-ui)
+  - [URLs](#urls)
   - [The tree](#the-tree)
 - [Image](#image)
   - [Quick start](#quick-start)
   - [What the image holds](#what-the-image-holds)
 - [Build](#build)
+  - [Web UI development](#web-ui-development)
 - [Versions](#versions)
 - [Following upstream](#following-upstream)
 - [License](#license)
 
 ## What it is
 
-`transmission-daemon` 4.1.3 with its RPC, its settings and its web UI, built
-from this branch. Towards peers and trackers it is Transmission 4.1.3: the
-peer id and the user agent are untouched. Existing `settings.json`, resume
-files and RPC clients keep working.
+`transmission-daemon` 4.1.3 with its RPC and its settings, built from this
+branch, and a web UI written for it. Towards peers and trackers it is
+Transmission 4.1.3: the peer id and the user agent are untouched. Existing
+`settings.json` and resume files keep working; an RPC client needs the new
+[URL](#urls).
 
 `main` is upstream's branch and is never committed to; everything of the fork
 is on `torrwheel`, so `main...torrwheel` is the whole difference.
@@ -70,12 +75,43 @@ connected to its peers and requests nothing until it is stopped and started.
 torrwheel builds the list on the next request, as Transmission did before
 4.1. The change is in `libtransmission/peer-mgr.cc`.
 
+### Web UI
+
+Transmission's web client is replaced by a single page in `web/` — React,
+TypeScript, Vite, Tailwind — that talks to the daemon over the same RPC:
+
+- the list of torrents with a name filter, a status filter and a sort, each
+  row with its state, share done, size, both rates and buttons to pause or
+  resume and to remove;
+- the daemon's totals above the list: download and upload rate, bytes left,
+  counts by state, free space in the download directory;
+- a torrent's details: its numbers, its location and hash, pause, verify,
+  remove with or without the data, and its files as a tree where a tick picks
+  a file or a folder;
+- adding by magnet link, URL or `.torrent` file, with the directory to
+  download to;
+- a light and a dark theme, two colour schemes, English and Russian.
+
+Daemon settings are not edited in the page; they stay in `settings.json`.
+
+### URLs
+
+The web UI is served from `/` and the RPC from `/rpc` — Transmission has
+them at `/transmission/web/` and `/transmission/rpc`. `rpc-url` in
+`settings.json` still moves both: with `"rpc-url": "/transmission/"` the page
+is at `/transmission/` and the RPC at `/transmission/rpc`, where Transmission's
+clients expect it. A `settings.json` that names `rpc-url` keeps its value.
+
+The page is sent with a content security policy that allows only its own
+origin, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`;
+files under `assets/` are cached for a year, the page itself is revalidated.
+
 ### The tree
 
 Upstream carries every client. Here only the daemon is left: the macOS, Qt,
-GTK and command-line clients, the translations, the release tooling and the
-documentation except `docs/rpc-spec.md` are removed by
-[`prune-upstream.sh`](prune-upstream.sh), which holds the list.
+GTK and command-line clients, upstream's web client, the translations, the
+release tooling and the documentation except `docs/rpc-spec.md` are removed
+by [`prune-upstream.sh`](prune-upstream.sh), which holds the list.
 
 ## Image
 
@@ -96,7 +132,7 @@ The three directories must be writable by uid `100`. The first start writes a
 default `settings.json`. Edit it only while the daemon is stopped — it
 rewrites the file on exit: set `download-dir`, `incomplete-dir` and
 `incomplete-dir-enabled`, and add your network to `rpc-whitelist` to reach
-the web UI on port 9091.
+the web UI at `http://<host>:9091/`.
 
 ### What the image holds
 
@@ -104,7 +140,7 @@ the web UI on port 9091.
   `transmission-daemon -f --log-level=info -g /etc/transmission-daemon`;
 - `transmission-remote`, `transmission-create`, `transmission-edit`,
   `transmission-show`;
-- the web UI in `/usr/share/transmission/public_html`;
+- the built web UI in `/usr/share/transmission/public_html`;
 - the user `torrwheel` (uid `100`, gid `101`) — the ids of Debian's
   `transmission-daemon` package, so a config directory made for it is taken
   over as it is;
@@ -125,9 +161,25 @@ The test suite is a stage of its own, built on the same compiled tree:
 docker build --target test -t torrwheel:test .
 ```
 
-Build arguments: `VERSION` (shown by the daemon as `4.1.3 (<VERSION>)`),
-`BUILD_JOBS` (parallel compile and test jobs, every core by default) and
-`ALPINE_VERSION`.
+Build arguments: `VERSION` (shown by the daemon as `4.1.3 (<VERSION>)` and in
+the page's footer), `COMMIT` and `BUILD_DATE` (the footer), `BUILD_JOBS`
+(parallel compile and test jobs, every core by default), `ALPINE_VERSION` and
+`NODE_VERSION`. The web UI is built in a stage of its own and copied into the
+image; cmake does not touch it.
+
+### Web UI development
+
+Vite serves the page and passes `/rpc` on to a running daemon:
+
+```bash
+docker run --rm -it -p 5173:5173 -v "$PWD/web":/app -w /app \
+  -e VITE_API_HOST=http://host.docker.internal:9091 \
+  node:26.10.0-alpine sh -c "npm ci && npm run dev"
+```
+
+That daemon needs `"rpc-url": "/"` and the container's address in its
+`rpc-whitelist`. `npx tsc -b` and `npx eslint .` in the same container are
+what the pipeline checks.
 
 ## Versions
 
@@ -147,7 +199,9 @@ git merge 4.1.4
 
 Files upstream changed under a removed path come up as conflicts, and the
 script settles them by removing the paths again. Only files changed on both
-sides are left to resolve by hand.
+sides are left to resolve by hand — among them `web/package.json`,
+`web/package-lock.json` and `web/eslint.config.js`, where the fork's version
+is the one to keep.
 
 ## License
 
