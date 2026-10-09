@@ -4,14 +4,16 @@
 
 A fork of [Transmission](https://github.com/transmission/transmission) for a
 home server: the daemon and a web UI of its own. The daemon differs in where
-a torrent's files are kept while it downloads and in a fix for downloads that
-stall after a file pick.
+a torrent's files are kept while it downloads, in moving finished files to
+another disk without freezing, and in a fix for downloads that stall after a
+file pick.
 
 ## Contents
 
 - [What it is](#what-it-is)
 - [What differs from Transmission](#what-differs-from-transmission)
   - [File placement](#file-placement)
+  - [Moving in the background](#moving-in-the-background)
   - [Downloading after a file pick](#downloading-after-a-file-pick)
   - [Web UI](#web-ui)
   - [URLs](#urls)
@@ -54,7 +56,8 @@ where they were to be avoided.
 torrwheel keeps the rule per file:
 
 - a file stays in the incomplete directory until it is complete;
-- when the torrent is done, only its complete files move to `download-dir`;
+- when the torrent is done, only its complete files move to `download-dir`
+  ([in the background](#moving-in-the-background));
 - files ticked later are downloaded in the incomplete directory and move when
   they are complete;
 - a torrent with nothing complete moves nothing.
@@ -65,6 +68,52 @@ it and removing it with its data act on both directories.
 
 The change is in `libtransmission/torrent.cc` and `torrent-files.cc`; its
 tests are `tests/libtransmission/torrwheel-test.cc`.
+
+### Moving in the background
+
+When the incomplete directory and `download-dir` are on different
+filesystems, moving a finished file is a full copy. Transmission makes that
+copy in the thread that runs everything else: until it ends, no torrent
+downloads or seeds and the RPC does not answer.
+
+torrwheel copies in a thread of its own, one file at a time for the whole
+daemon:
+
+- the file is copied to its new place under a temporary name ending in
+  `.tw-move`, while the torrent goes on reading — and seeding — it from the
+  old place;
+- once the copy is whole and flushed to disk it takes its real name and the
+  old file is removed, which is a moment's work;
+- `torrent_get` reports the move as `move_bytes_done` and `move_bytes_total`,
+  both zero when nothing is being copied. The torrent's `status` does not
+  change.
+
+Within one filesystem a move is still a rename and takes no time.
+
+What happens in the middle of a copy:
+
+| Event | Result |
+| --- | --- |
+| The torrent is paused | the copy goes on; it does not depend on peers |
+| The torrent is removed | the copy stops and its temporary file is deleted first |
+| The file selection changes | nothing: only finished files are moved |
+| A check is asked for | it starts when the move is over |
+| A path in the torrent is renamed | refused until the move is over |
+| The daemon stops | the copy stops, its temporary file is deleted, the source is intact; the move starts again with the daemon |
+| The daemon is killed | a `.tw-move` file is left behind and overwritten when the move starts again |
+| The disk is full, or another error | the temporary file is deleted and the torrent stops with the error |
+
+Moving a torrent by hand (`torrent_set_location` with `move`) uses the same
+thread. A torrent that is still downloading is stopped for the time of the
+copy and started again after it. When the new place is neither `download-dir`
+nor the incomplete directory, every file is copied first and they all change
+place together at the end, so the torrent never has files in a directory it
+does not look in.
+
+The copy is in `libtransmission/torrwheel-mover.cc`, the torrent's side in
+`torrent.cc`; the tests are in `tests/libtransmission/torrwheel-test.cc`.
+`TORRWHEEL_MOVE_THROTTLE`, bytes per second, slows the copies down — for a
+test stand, not for use.
 
 ### Downloading after a file pick
 

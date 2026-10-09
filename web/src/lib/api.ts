@@ -37,7 +37,7 @@ export type Torrent = {
   metadata_percent_complete: number;
   /** Share verified, while the torrent is being checked. */
   recheck_progress: number;
-  /** Bytes of a move between directories under way; absent in a daemon without the field. */
+  /** Bytes of a move between filesystems under way, both zero when there is none; absent in Transmission. */
   move_bytes_done?: number;
   move_bytes_total?: number;
 };
