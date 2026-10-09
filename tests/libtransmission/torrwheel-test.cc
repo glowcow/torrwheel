@@ -525,8 +525,9 @@ TEST_F(TorrwheelSlowCopyTest, aFileIsReadFromTheOldPlaceUntilItsCopyIsWhole)
 
     auto* const tor = zeroTorrentInit(ZeroTorrentState::Partial);
     setFirstFileWanted(tor, false);
-    ASSERT_TRUE(waitFor([tor]() { return tor->is_moving(); }, MaxWaitMsec));
-    EXPECT_EQ(4096U + 512U, tor->move_bytes_total());
+    // The total grows while the session thread is still listing the files: wait for both to be counted.
+    ASSERT_TRUE(waitFor([tor]() { return tor->move_bytes_total() == 4096U + 512U; }, MaxWaitMsec));
+    EXPECT_TRUE(tor->is_moving());
     EXPECT_LE(tor->move_bytes_done(), tor->move_bytes_total());
 
     // still where it was, and readable
