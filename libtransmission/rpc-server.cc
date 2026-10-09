@@ -608,15 +608,28 @@ void handle_request(struct evhttp_request* req, void* arg)
     auto const* const uri = evhttp_request_get_uri(req);
     auto const uri_sv = std::string_view{ uri };
     auto const under_url = tr_strv_starts_with(uri_sv, server->url());
-    auto const location = under_url ? uri_sv.substr(std::size(server->url())) : ""sv;
+    auto location = under_url ? uri_sv.substr(std::size(server->url())) : ""sv;
+
+    // torrwheel: Transmission's own paths. Its RPC address goes on answering, for the clients
+    // that were told it; its web UI's address leads to the page.
+    static auto constexpr Legacy = "transmission/"sv;
+    auto const is_legacy = under_url && server->url() != "/transmission/"sv &&
+        (tr_strv_starts_with(location, Legacy) || location == "transmission"sv);
+    if (tr_strv_starts_with(location, Legacy) && is_legacy)
+    {
+        location.remove_prefix(std::size(Legacy));
+    }
+
     // torrwheel: "rpc" is the RPC; everything else under the URL is the web UI
     auto const is_rpc = tr_strv_starts_with(location, "rpc"sv) &&
         (std::size(location) == 3U || location[3] == '/' || location[3] == '?');
 
-    if (!under_url)
+    if (!under_url || (is_legacy && !is_rpc))
     {
+        // torrwheel: never a permanent redirect, which a browser keeps after the URL has changed again
         evhttp_add_header(output_headers, "Location", server->url().c_str());
-        send_simple_response(req, HTTP_MOVEPERM, nullptr);
+        evhttp_add_header(output_headers, "Cache-Control", "no-store");
+        send_simple_response(req, HTTP_MOVETEMP, nullptr);
     }
     else if (!is_rpc)
     {
