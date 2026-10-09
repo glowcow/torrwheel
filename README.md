@@ -202,7 +202,7 @@ docker run -d --name torrwheel \
   -v "$PWD/config:/etc/transmission-daemon" \
   -v "$PWD/downloads:/Downloads" \
   -v "$PWD/incomplete:/Incomplete" \
-  glowcow/torrwheel:v4.1.3-2
+  glowcow/torrwheel:v4.1.3-3
 ```
 
 The three directories must be writable by uid `100`. The first start writes a
@@ -263,7 +263,7 @@ what the pipeline checks.
 ## Versions
 
 A release is the upstream version plus the fork's own counter: `v4.1.3-1`,
-`v4.1.3-2`, then `v4.1.4-1`. The image carries the same tag. Tags without the
+`v4.1.3-2`, `v4.1.3-3`, then `v4.1.4-1`. The image carries the same tag. Tags without the
 `v` are upstream's.
 
 ## Following upstream
