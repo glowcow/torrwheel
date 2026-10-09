@@ -61,6 +61,7 @@
 #include "libtransmission/timer.h"
 #include "libtransmission/torrent-queue.h"
 #include "libtransmission/torrents.h"
+#include "libtransmission/torrwheel-mover.h"
 #include "libtransmission/tr-assert.h"
 #include "libtransmission/tr-dht.h"
 #include "libtransmission/tr-lpd.h"
@@ -1151,6 +1152,10 @@ public:
     void verify_add(tr_torrent* tor);
     void verify_remove(tr_torrent const* tor);
 
+    // torrwheel: the worker that copies files between filesystems
+    [[nodiscard]] torrwheel::Mover& mover();
+    void move_cancel(tr_torrent_id_t tor_id);
+
     void fetch(tr_web::FetchOptions&& options) const
     {
         if (web_)
@@ -1476,6 +1481,9 @@ private:
     std::unique_ptr<libtransmission::Timer> save_timer_;
 
     std::unique_ptr<tr_verify_worker> verifier_ = std::make_unique<tr_verify_worker>();
+
+    // torrwheel: made on first use
+    std::unique_ptr<torrwheel::Mover> mover_;
 
 public:
     std::unique_ptr<libtransmission::Timer> utp_timer;

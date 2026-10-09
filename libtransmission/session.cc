@@ -1446,6 +1446,8 @@ void tr_session::closeImplPart1(std::promise<void>* closed_promise, std::chrono:
         tr_torrentFreeInSessionThread(tor);
     }
     torrents.clear();
+    // torrwheel: every torrent cancelled its own move while being freed
+    mover_.reset();
     // ...now that all the torrents have been closed, any remaining
     // `&event=stopped` announce messages are queued in the announcer.
     // Tell the announcer to start shutdown, which sends out the stop
@@ -2130,6 +2132,26 @@ bool tr_sessionGetAntiBruteForceEnabled(tr_session const* session)
 }
 
 // ---
+
+// torrwheel: TORRWHEEL_MOVE_THROTTLE, bytes per second, slows the copies down for a test stand
+torrwheel::Mover& tr_session::mover()
+{
+    if (!mover_)
+    {
+        auto const throttle = tr_num_parse<uint64_t>(tr_env_get_string("TORRWHEEL_MOVE_THROTTLE"sv)).value_or(0U);
+        mover_ = std::make_unique<torrwheel::Mover>(throttle);
+    }
+
+    return *mover_;
+}
+
+void tr_session::move_cancel(tr_torrent_id_t const tor_id)
+{
+    if (mover_)
+    {
+        mover_->cancel(tor_id);
+    }
+}
 
 void tr_session::verify_remove(tr_torrent const* const tor)
 {

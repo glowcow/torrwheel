@@ -5,16 +5,22 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno> // EINVAL
 #include <chrono>
 #include <cstddef> // size_t
 #include <ctime>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#ifndef _WIN32
+#include <unistd.h> // link()
+#endif
 
 #include <fmt/chrono.h>
 #include <fmt/format.h>
@@ -39,6 +45,7 @@
 #include "libtransmission/torrent-ctor.h"
 #include "libtransmission/torrent-magnet.h"
 #include "libtransmission/torrent-metainfo.h"
+#include "libtransmission/torrwheel-mover.h"
 #include "libtransmission/torrent.h"
 #include "libtransmission/tr-assert.h"
 #include "libtransmission/tr-strbuf.h"
@@ -730,6 +737,9 @@ void tr_torrentRemoveInSessionThread(tr_torrent* tor, bool delete_flag, tr_fileF
 {
     auto const lock = tor->unique_lock();
 
+    // torrwheel: the copy stops before anything is deleted
+    tor->cancel_move();
+
     if (delete_flag && tor->has_metainfo())
     {
         // ensure the files are all closed and idle before moving
@@ -805,6 +815,7 @@ void tr_torrentFreeInSessionThread(tr_torrent* tor)
     }
 
     tor->set_dirty(!tor->is_deleting_);
+    tor->cancel_move();
     tor->stop_now();
 
     if (tor->is_deleting_)
@@ -1044,6 +1055,30 @@ void tr_torrent::init(tr_ctor const& ctor)
         set_local_error_if_files_disappeared(this, has_any_local_data);
     }
 
+    // torrwheel: files that finished downloading in an earlier run but did not get to move
+    if (!is_new_torrent && this->has_metainfo() && is_done() && !std::empty(incomplete_dir()) &&
+        current_dir() == incomplete_dir())
+    {
+        session->run_in_session_thread(
+            [session = session, tor_id = id()]()
+            {
+                auto* const tor = session->torrents().get(tor_id);
+                if (tor == nullptr || tor->is_deleting_ || tor->is_moving())
+                {
+                    return;
+                }
+
+                if (tor->completeness_ == TR_SEED)
+                {
+                    tor->set_location_in_session_thread(tor->download_dir().sv(), true, nullptr);
+                }
+                else
+                {
+                    tor->move_completed_files();
+                }
+            });
+    }
+
     // Recover from the bug reported at https://github.com/transmission/transmission/issues/6899
     if (is_done() && date_done_ == time_t{})
     {
@@ -1098,57 +1133,466 @@ tr_torrent* tr_torrentNew(tr_ctor* ctor, tr_torrent** setme_duplicate_of)
 
 // --- Location
 
+// torrwheel: what a move between filesystems needs to remember until its last file is in place
+struct tr_torrent::MoveState
+{
+    std::shared_ptr<torrwheel::Mover::Progress> progress = std::make_shared<torrwheel::Mover::Progress>();
+    uint64_t generation = {};
+
+    // where the files came from, to tidy up emptied folders
+    std::vector<std::string> old_parents;
+
+    // a relocation ends by pointing the torrent at `new_parent`
+    bool is_relocation = false;
+    std::string new_parent;
+    int volatile* setme_state = nullptr;
+
+    // `new_parent` is not searched for files until the end, so nothing may land there before
+    bool put_in_place_at_end = false;
+    std::vector<std::pair<std::string, std::string>> pending; // src, dst
+
+    bool restart_when_done = false;
+    bool verify_when_done = false;
+    bool rerun_when_done = false;
+};
+
+// (called from the mover's thread)
+class tr_torrent::MoveMediator final : public torrwheel::Mover::Mediator
+{
+public:
+    MoveMediator(tr_session* session, tr_torrent_id_t tor_id, uint64_t generation)
+        : session_{ session }
+        , tor_id_{ tor_id }
+        , generation_{ generation }
+    {
+    }
+
+    void on_file_copied(torrwheel::Mover::File const& file) override
+    {
+        session_->run_in_session_thread(
+            [session = session_, tor_id = tor_id_, generation = generation_, file]()
+            {
+                if (auto* const tor = find(session, tor_id, generation); tor != nullptr)
+                {
+                    tor->on_move_file_copied(file.index, file.src, file.dst);
+                }
+            });
+    }
+
+    void on_done(bool cancelled, tr_error const& error) override
+    {
+        // whoever cancelled has dealt with the torrent already
+        if (cancelled)
+        {
+            return;
+        }
+
+        session_->run_in_session_thread(
+            [session = session_,
+             tor_id = tor_id_,
+             generation = generation_,
+             code = error.code(),
+             msg = std::string{ error.message() }]()
+            {
+                if (auto* const tor = find(session, tor_id, generation); tor != nullptr)
+                {
+                    auto err = tr_error{};
+                    if (code != 0 || !std::empty(msg))
+                    {
+                        err.set(code, msg);
+                    }
+                    tor->finish_move(!err, err);
+                }
+            });
+    }
+
+private:
+    // the torrent, if it still exists and this is still its move
+    [[nodiscard]] static tr_torrent* find(tr_session* session, tr_torrent_id_t tor_id, uint64_t generation)
+    {
+        auto* const tor = session->torrents().get(tor_id);
+        return tor != nullptr && !tor->is_deleting_ && tor->move_ && tor->move_->generation == generation ? tor : nullptr;
+    }
+
+    tr_session* const session_;
+    tr_torrent_id_t const tor_id_;
+    uint64_t const generation_;
+};
+
+namespace
+{
+std::atomic<bool> move_always_copies = false;
+std::atomic<uint64_t> move_generation = {};
+
+// A second name for the same data; works only within one filesystem.
+[[nodiscard]] bool hard_link(std::string const& src, std::string const& dst)
+{
+#ifdef _WIN32
+    (void)src;
+    (void)dst;
+    return false;
+#else
+    tr_sys_path_remove(dst.c_str());
+    return link(src.c_str(), dst.c_str()) == 0;
+#endif
+}
+
+// The second names and finished copies that were waiting to be swapped in.
+void remove_pending_tmp_files(std::vector<std::pair<std::string, std::string>> const& pending)
+{
+    for (auto const& [src, dst] : pending)
+    {
+        tr_sys_path_remove(torrwheel::Mover::tmp_path(dst).c_str());
+    }
+}
+} // namespace
+
+void tr_torrent::set_move_always_copies_for_testing(bool always_copies) noexcept
+{
+    move_always_copies = always_copies;
+}
+
+uint64_t tr_torrent::move_bytes_done() const noexcept
+{
+    return move_ ? std::min(move_->progress->bytes_done.load(), move_->progress->bytes_total) : 0U;
+}
+
+uint64_t tr_torrent::move_bytes_total() const noexcept
+{
+    return move_ ? move_->progress->bytes_total : 0U;
+}
+
+void tr_torrent::cancel_move()
+{
+    TR_ASSERT(session->am_in_session_thread());
+
+    if (!move_)
+    {
+        return;
+    }
+
+    auto const move = std::move(move_);
+    move_.reset();
+    session->move_cancel(id());
+    remove_pending_tmp_files(move->pending);
+
+    if (move->setme_state != nullptr)
+    {
+        *move->setme_state = TR_LOC_ERROR;
+    }
+
+    mark_changed();
+}
+
+// The folders a moved file leaves empty, up to the directory it was found in.
+void tr_torrent::tidy_after_moved_file(std::string_view src) const
+{
+    if (!move_)
+    {
+        return;
+    }
+
+    for (auto const& old_parent : move_->old_parents)
+    {
+        if (!tr_strv_starts_with(src, old_parent))
+        {
+            continue;
+        }
+
+        // removing a folder that still holds something fails, which ends the walk
+        auto dir = tr_pathbuf{ src };
+        while (dir.popdir() && std::size(dir) > std::size(old_parent) && tr_sys_path_remove(dir))
+        {
+        }
+
+        break;
+    }
+}
+
+// The copy takes its real name and the source goes: from now on the file is read from the new place.
+bool tr_torrent::put_moved_file_in_place(std::string const& src, std::string const& dst, tr_error& error)
+{
+    if (auto const tmp = torrwheel::Mover::tmp_path(dst); !tr_sys_path_rename(tmp.c_str(), dst.c_str(), &error))
+    {
+        error.prefix_message("Unable to put the moved file in place: ");
+        return false;
+    }
+
+    if (auto log_error = tr_error{}; !tr_sys_path_remove(src.c_str(), &log_error))
+    {
+        tr_logAddErrorTor(
+            this,
+            fmt::format(
+                fmt::runtime(_("Couldn't remove '{path}': {error} ({error_code})")),
+                fmt::arg("path", src),
+                fmt::arg("error", log_error.message()),
+                fmt::arg("error_code", log_error.code())));
+    }
+
+    tidy_after_moved_file(src);
+    return true;
+}
+
+void tr_torrent::on_move_file_copied(tr_file_index_t const file, std::string const& src, std::string const& dst)
+{
+    TR_ASSERT(session->am_in_session_thread());
+    TR_ASSERT(move_);
+
+    if (move_->put_in_place_at_end)
+    {
+        move_->pending.emplace_back(src, dst);
+        return;
+    }
+
+    session->close_torrent_file(*this, file);
+
+    if (auto error = tr_error{}; !put_moved_file_in_place(src, dst, error))
+    {
+        session->move_cancel(id());
+        finish_move(false, error);
+        return;
+    }
+
+    mark_changed();
+}
+
+// The files to move are renamed where that works; the rest is handed to the session's mover,
+// and the torrent goes on reading every file from where it is until its copy is complete.
+void tr_torrent::start_move(
+    std::vector<std::string> old_parents,
+    std::string_view const new_parent,
+    tr_torrent_files::FilePredicate const& should_move,
+    bool const is_relocation,
+    int volatile* const setme_state)
+{
+    TR_ASSERT(session->am_in_session_thread());
+
+    // a new move replaces the one under way
+    cancel_move();
+
+    // ensure the files are all closed and idle before moving
+    session->close_torrent_files(id());
+    session->verify_remove(this);
+
+    auto move = std::make_shared<MoveState>();
+    move->generation = ++move_generation;
+    move->old_parents = std::move(old_parents);
+    move->is_relocation = is_relocation;
+    move->new_parent = std::string{ new_parent };
+    move->setme_state = setme_state;
+    // files that land in the download dir or the incomplete dir are found there at once
+    move->put_in_place_at_end = is_relocation && new_parent != download_dir().sv() && new_parent != incomplete_dir().sv();
+
+    if (setme_state != nullptr)
+    {
+        *setme_state = TR_LOC_MOVING;
+    }
+
+    auto const parent = tr_pathbuf{ new_parent };
+    auto error = tr_error{};
+    auto to_copy = std::vector<torrwheel::Mover::File>{};
+
+    move_ = move;
+
+    if (tr_sys_dir_create(parent, TR_SYS_DIR_CREATE_PARENTS, 0777, &error))
+    {
+        for (auto const& old_parent : move->old_parents)
+        {
+            if (error || tr_sys_path_is_same(old_parent.c_str(), parent))
+            {
+                continue;
+            }
+
+            auto const paths = std::array<std::string_view, 1>{ old_parent };
+
+            for (tr_file_index_t i = 0, n = file_count(); i < n; ++i)
+            {
+                if (should_move && !should_move(i))
+                {
+                    continue;
+                }
+
+                auto const found = files().find(i, std::data(paths), std::size(paths));
+                if (!found)
+                {
+                    continue;
+                }
+
+                auto const src = std::string{ found->filename().sv() };
+                auto const dst = std::string{ tr_pathbuf{ parent, '/', found->subpath() }.sv() };
+                if (tr_sys_path_is_same(src.c_str(), dst.c_str()))
+                {
+                    continue;
+                }
+
+                auto newdir = tr_pathbuf{ dst };
+                newdir.popdir();
+                if (!tr_sys_dir_create(newdir, TR_SYS_DIR_CREATE_PARENTS, 0777, &error))
+                {
+                    break;
+                }
+
+                // on one filesystem no copy is needed: a rename, or a second name to swap in at the end
+                if (!move_always_copies)
+                {
+                    if (!move->put_in_place_at_end && tr_sys_path_rename(src.c_str(), dst.c_str()))
+                    {
+                        tidy_after_moved_file(src);
+                        continue;
+                    }
+
+                    if (move->put_in_place_at_end && hard_link(src, torrwheel::Mover::tmp_path(dst)))
+                    {
+                        move->pending.emplace_back(src, dst);
+                        continue;
+                    }
+                }
+
+                to_copy.push_back({ i, src, dst, found->size });
+                move->progress->bytes_total += found->size;
+            }
+        }
+    }
+
+    if (error || std::empty(to_copy))
+    {
+        finish_move(!error, error);
+        return;
+    }
+
+    // a torrent still being written to cannot be copied under its own feet
+    if (is_relocation && !is_done() && is_running())
+    {
+        move->restart_when_done = true;
+        stop_now();
+    }
+
+    tr_logAddInfoTor(
+        this,
+        fmt::format(
+            "Moving {} file(s), {} bytes, to '{}' in the background",
+            std::size(to_copy),
+            move->progress->bytes_total,
+            new_parent));
+
+    mark_changed();
+    session->mover()
+        .add(id(), std::move(to_copy), move->progress, std::make_unique<MoveMediator>(session, id(), move->generation));
+}
+
+void tr_torrent::finish_move(bool ok, tr_error const& error_in)
+{
+    TR_ASSERT(session->am_in_session_thread());
+
+    auto const move = std::move(move_);
+    move_.reset();
+    if (!move)
+    {
+        return;
+    }
+
+    auto error = tr_error{};
+    if (error_in)
+    {
+        error.set(error_in.code(), error_in.message());
+    }
+
+    // a relocation to a place of its own: every copy is complete, now they all take their names
+    if (ok && !std::empty(move->pending))
+    {
+        move_ = move; // tidy_after_moved_file() reads the old parents
+        session->close_torrent_files(id());
+        for (auto const& [src, dst] : move->pending)
+        {
+            if (!put_moved_file_in_place(src, dst, error))
+            {
+                ok = false;
+                break;
+            }
+        }
+        move_.reset();
+    }
+
+    if (!ok)
+    {
+        remove_pending_tmp_files(move->pending);
+        this->error().set_local_error(
+            fmt::format(
+                fmt::runtime(_("Couldn't move '{old_path}' to '{path}': {error} ({error_code})")),
+                fmt::arg("old_path", std::empty(move->old_parents) ? ""sv : std::string_view{ move->old_parents.front() }),
+                fmt::arg("path", move->new_parent),
+                fmt::arg("error", error.message()),
+                fmt::arg("error_code", error.code())));
+        tr_torrentStop(this);
+    }
+    else if (move->is_relocation)
+    {
+        // the folders and junk files left behind; every torrent file is gone from there
+        for (auto const& old_parent : move->old_parents)
+        {
+            files().move(old_parent, move->new_parent, name());
+        }
+
+        // tell the torrent where the files are
+        set_download_dir(move->new_parent);
+        incomplete_dir_.clear();
+        current_dir_ = download_dir();
+    }
+
+    if (move->setme_state != nullptr)
+    {
+        *move->setme_state = ok ? TR_LOC_DONE : TR_LOC_ERROR;
+    }
+
+    set_dirty();
+    mark_changed();
+
+    if (!ok)
+    {
+        return;
+    }
+
+    if (move->verify_when_done)
+    {
+        start_when_stable_ = start_when_stable_ || move->restart_when_done;
+        tr_torrentVerify(this);
+    }
+    else if (move->restart_when_done)
+    {
+        tr_torrentStart(this);
+    }
+
+    // files that finished while the others were being copied
+    if (move->rerun_when_done && !move->is_relocation && completeness_ == TR_PARTIAL_SEED && current_dir() == incomplete_dir())
+    {
+        move_completed_files();
+    }
+}
+
 void tr_torrent::set_location_in_session_thread(std::string_view const path, bool move_from_old_path, int volatile* setme_state)
 {
     TR_ASSERT(session->am_in_session_thread());
 
-    auto ok = true;
     if (move_from_old_path)
     {
-        if (setme_state != nullptr)
-        {
-            *setme_state = TR_LOC_MOVING;
-        }
-
-        // ensure the files are all closed and idle before moving
-        session->close_torrent_files(id());
-        session->verify_remove(this);
-
-        auto error = tr_error{};
-        ok = files().move(current_dir(), path, name(), &error);
         // torrwheel: a partly downloaded torrent has files in both dirs
-        if (ok && current_dir() != download_dir())
+        auto old_parents = std::vector<std::string>{ std::string{ current_dir().sv() } };
+        if (current_dir() != download_dir())
         {
-            ok = files().move(download_dir(), path, name(), &error);
+            old_parents.emplace_back(download_dir().sv());
         }
-        if (error)
-        {
-            this->error().set_local_error(
-                fmt::format(
-                    fmt::runtime(_("Couldn't move '{old_path}' to '{path}': {error} ({error_code})")),
-                    fmt::arg("old_path", current_dir()),
-                    fmt::arg("path", path),
-                    fmt::arg("error", error.message()),
-                    fmt::arg("error_code", error.code())));
-            tr_torrentStop(this);
-        }
+
+        start_move(std::move(old_parents), path, {}, true, setme_state);
+        return;
     }
 
     // tell the torrent where the files are
-    if (ok)
-    {
-        set_download_dir(path);
-
-        if (move_from_old_path)
-        {
-            incomplete_dir_.clear();
-            current_dir_ = download_dir();
-        }
-    }
+    cancel_move();
+    set_download_dir(path);
 
     if (setme_state != nullptr)
     {
-        *setme_state = ok ? TR_LOC_DONE : TR_LOC_ERROR;
+        *setme_state = TR_LOC_DONE;
     }
 }
 
@@ -1182,27 +1626,19 @@ void tr_torrent::move_completed_files()
     session->run_in_session_thread(
         [this]()
         {
-            session->close_torrent_files(id());
-            session->verify_remove(this);
+            // a file that finishes while others are being copied waits for its turn
+            if (move_ && !move_->is_relocation)
+            {
+                move_->rerun_when_done = true;
+                return;
+            }
 
             auto const is_complete = [this](tr_file_index_t file)
             {
                 return has_file(file);
             };
 
-            auto error = tr_error{};
-            files().move(incomplete_dir(), download_dir(), name(), &error, is_complete);
-            if (error)
-            {
-                this->error().set_local_error(
-                    fmt::format(
-                        fmt::runtime(_("Couldn't move '{old_path}' to '{path}': {error} ({error_code})")),
-                        fmt::arg("old_path", incomplete_dir()),
-                        fmt::arg("path", download_dir()),
-                        fmt::arg("error", error.message()),
-                        fmt::arg("error_code", error.code())));
-                tr_torrentStop(this);
-            }
+            start_move({ std::string{ incomplete_dir().sv() } }, download_dir().sv(), is_complete, false, nullptr);
         });
 }
 
@@ -1602,6 +2038,13 @@ void tr_torrentVerify(tr_torrent* tor)
 
             if (tor != session->torrents().get(tor_id) || tor->is_deleting_)
             {
+                return;
+            }
+
+            // torrwheel: a check would read files that are about to change place
+            if (tor->move_)
+            {
+                tor->move_->verify_when_done = true;
                 return;
             }
 
@@ -2523,7 +2966,12 @@ void tr_torrent::rename_path_in_session_thread(
 
     auto error = 0;
 
-    if (!renameArgsAreValid(this, oldpath, newname))
+    // torrwheel: the files are changing place
+    if (move_)
+    {
+        error = EBUSY;
+    }
+    else if (!renameArgsAreValid(this, oldpath, newname))
     {
         error = EINVAL;
     }

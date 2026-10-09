@@ -147,6 +147,21 @@ struct tr_torrent
 
     using VerifyDoneCallback = std::function<void(tr_torrent*)>;
 
+    // torrwheel: bytes copied and to copy by the move under way; both zero when there is none
+    [[nodiscard]] uint64_t move_bytes_done() const noexcept;
+    [[nodiscard]] uint64_t move_bytes_total() const noexcept;
+
+    [[nodiscard]] bool is_moving() const noexcept
+    {
+        return move_ != nullptr;
+    }
+
+    // torrwheel: stops the move under way, leaving every file where it is now
+    void cancel_move();
+
+    // torrwheel: for tests, where both directories are on one filesystem
+    static void set_move_always_copies_for_testing(bool always_copies) noexcept;
+
     class VerifyMediator : public tr_verify_worker::Mediator
     {
     public:
@@ -1327,6 +1342,20 @@ private:
     void set_location_in_session_thread(std::string_view path, bool move_from_old_path, int volatile* setme_state);
     void move_completed_files();
 
+    // torrwheel: a move that has to copy runs in the session's mover; see torrent.cc
+    struct MoveState;
+    class MoveMediator;
+    void start_move(
+        std::vector<std::string> old_parents,
+        std::string_view new_parent,
+        tr_torrent_files::FilePredicate const& should_move,
+        bool is_relocation,
+        int volatile* setme_state);
+    void on_move_file_copied(tr_file_index_t file, std::string const& src, std::string const& dst);
+    void finish_move(bool ok, tr_error const& error);
+    [[nodiscard]] bool put_moved_file_in_place(std::string const& src, std::string const& dst, tr_error& error);
+    void tidy_after_moved_file(std::string_view src) const;
+
     void rename_path_in_session_thread(
         std::string_view oldpath,
         std::string_view newname,
@@ -1427,6 +1456,9 @@ private:
     uint16_t max_connected_peers_ = TrDefaultPeerLimitTorrent;
 
     bool is_deleting_ = false;
+
+    // torrwheel: set while files are being copied to another filesystem
+    std::shared_ptr<MoveState> move_;
     bool is_dirty_ = false;
     bool is_queued_ = false;
     bool is_running_ = false;

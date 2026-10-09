@@ -731,6 +731,8 @@ namespace make_torrent_field_helpers
     case TR_KEY_manual_announce_time:
     case TR_KEY_max_connected_peers:
     case TR_KEY_metadata_percent_complete:
+    case TR_KEY_move_bytes_done:
+    case TR_KEY_move_bytes_total:
     case TR_KEY_name:
     case TR_KEY_peer_limit:
     case TR_KEY_peers:
@@ -900,6 +902,11 @@ namespace make_torrent_field_helpers
         return Speed{ st.pieceUploadSpeed_KBps, Speed::Units::KByps }.base_quantity();
     case TR_KEY_recheck_progress:
         return st.recheckProgress;
+    // torrwheel: both zero unless files are being copied to another filesystem
+    case TR_KEY_move_bytes_done:
+        return tor.move_bytes_done();
+    case TR_KEY_move_bytes_total:
+        return tor.move_bytes_total();
     case TR_KEY_seconds_downloading:
         return st.secondsDownloading;
     case TR_KEY_seconds_seeding:

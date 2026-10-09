@@ -339,6 +339,8 @@ auto constexpr MyStatic = std::array<std::string_view, TR_N_KEYS>{
     "metainfo"sv, // rpc
     "method"sv, // json-rpc
     "move"sv, // rpc
+    "move_bytes_done"sv, // rpc (torrwheel)
+    "move_bytes_total"sv, // rpc (torrwheel)
     "msg_type"sv, // BT protocol
     "mtimes"sv, // .resume
     "name"sv, // .resume, .torrent, rpc
