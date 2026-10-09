@@ -159,6 +159,8 @@ target_sources(${TR_NAME}
         tr-utp.h
         torrwheel-geoip.cc
         torrwheel-geoip.h
+        torrwheel-mover.cc
+        torrwheel-mover.h
         transmission.h
         utils-ev.cc
         utils-ev.h
