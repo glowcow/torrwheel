@@ -34,8 +34,8 @@ file pick.
 `transmission-daemon` 4.1.3 with its RPC and its settings, built from this
 branch, and a web UI written for it. Towards peers and trackers it is
 Transmission 4.1.3: the peer id and the user agent are untouched. Existing
-`settings.json` and resume files keep working; an RPC client needs the new
-[URL](#urls).
+`settings.json`, resume files and RPC clients keep working; the page and the
+RPC have new [URLs](#urls), and the old RPC address still answers.
 
 `main` is upstream's branch and is never committed to; everything of the fork
 is on `torrwheel`, so `main...torrwheel` is the whole difference.
@@ -148,10 +148,16 @@ Daemon settings are not edited in the page; they stay in `settings.json`.
 ### URLs
 
 The web UI is served from `/` and the RPC from `/rpc` — Transmission has
-them at `/transmission/web/` and `/transmission/rpc`. `rpc-url` in
-`settings.json` still moves both: with `"rpc-url": "/transmission/"` the page
-is at `/transmission/` and the RPC at `/transmission/rpc`, where Transmission's
-clients expect it. A `settings.json` that names `rpc-url` keeps its value.
+them at `/transmission/web/` and `/transmission/rpc`. Those two go on
+working: `/transmission/rpc` answers as the RPC, so a client that was told
+Transmission's address needs no change, and `/transmission/web/` leads to the
+page. A redirect is never a permanent one — a browser would keep it after the
+address has changed again.
+
+`rpc-url` in `settings.json` still moves both: with `"rpc-url":
+"/transmission/"` the page is at `/transmission/` and the RPC at
+`/transmission/rpc`. A `settings.json` that names `rpc-url` keeps its value;
+set it to `/` to have the page at the root.
 
 The page is sent with a content security policy that allows only its own
 origin, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`;
@@ -202,7 +208,7 @@ docker run -d --name torrwheel \
   -v "$PWD/config:/etc/transmission-daemon" \
   -v "$PWD/downloads:/Downloads" \
   -v "$PWD/incomplete:/Incomplete" \
-  glowcow/torrwheel:v4.1.3-3
+  glowcow/torrwheel:v4.1.3-4
 ```
 
 The three directories must be writable by uid `100`. The first start writes a
@@ -263,7 +269,7 @@ what the pipeline checks.
 ## Versions
 
 A release is the upstream version plus the fork's own counter: `v4.1.3-1`,
-`v4.1.3-2`, `v4.1.3-3`, then `v4.1.4-1`. The image carries the same tag. Tags without the
+`v4.1.3-2` … `v4.1.3-4`, then `v4.1.4-1`. The image carries the same tag. Tags without the
 `v` are upstream's.
 
 ## Following upstream
