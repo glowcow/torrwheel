@@ -38,7 +38,7 @@ export function Header({ ref, query, onQueryChange, onReset, onAdd }: Props) {
           onClick={onReset}
           className="order-1 sm:order-none shrink-0 select-none cursor-pointer rounded-md lg:justify-self-start font-semibold text-[17px] tracking-[-0.01em]"
         >
-          torrwheel
+          Torrwheel
         </button>
 
         {/* The field shows focus itself: a 2px accent bar on its left edge. */}

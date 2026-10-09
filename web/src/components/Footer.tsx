@@ -25,7 +25,7 @@ export function Footer() {
     <footer className="mx-auto max-w-[1400px] px-6 sm:px-10 lg:px-16 mt-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       <div className="swiss-rule-top py-5 px-3 sm:px-4 flex flex-col items-center gap-y-1 text-[11.5px] text-[var(--color-ink-muted)] tabular-nums">
         <span className="flex items-center gap-x-2 sm:gap-x-3 whitespace-nowrap">
-          <Wordmark>torrwheel:</Wordmark>
+          <Wordmark>Torrwheel:</Wordmark>
           <span>v{VERSION}</span>
           {/* The hash is the first stamp to go on a narrow screen. */}
           <Slash className="hidden sm:inline" />
