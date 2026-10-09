@@ -15,6 +15,8 @@ stall after a file pick.
   - [Downloading after a file pick](#downloading-after-a-file-pick)
   - [Web UI](#web-ui)
   - [URLs](#urls)
+  - [Download directories](#download-directories)
+  - [Peer countries](#peer-countries)
   - [The tree](#the-tree)
 - [Image](#image)
   - [Quick start](#quick-start)
@@ -106,6 +108,32 @@ The page is sent with a content security policy that allows only its own
 origin, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`;
 files under `assets/` are cached for a year, the page itself is revalidated.
 
+### Download directories
+
+`download_dirs` in `settings.json` is a list of directories a client may
+offer when a torrent is added:
+
+```json
+"download_dirs": ["/Downloads", "/Dumps"]
+```
+
+The daemon only hands the list out — `session_get` returns it as
+`download_dirs`, and `session_set` does not change it. The web UI puts these
+directories first in the add dialog's list, each with the free space the
+daemon reports there; any other path can still be typed.
+
+### Peer countries
+
+When the daemon finds a country database, every peer in `torrent_get`'s
+`peers` whose address the database knows carries `country`, a two-letter ISO
+code; the web UI draws its flag. The database is an MMDB file read with
+libmaxminddb, looked for at `/usr/share/transmission/country.mmdb` or where
+`TORRWHEEL_COUNTRY_DB` points. Without the file, or in a build without
+libmaxminddb, the field is simply absent.
+
+The image ships DB-IP's monthly "IP to Country Lite" database — see
+[License](#license).
+
 ### The tree
 
 Upstream carries every client. Here only the daemon is left: the macOS, Qt,
@@ -141,6 +169,7 @@ the web UI at `http://<host>:9091/`.
 - `transmission-remote`, `transmission-create`, `transmission-edit`,
   `transmission-show`;
 - the built web UI in `/usr/share/transmission/public_html`;
+- the country database in `/usr/share/transmission/country.mmdb`;
 - the user `torrwheel` (uid `100`, gid `101`) — the ids of Debian's
   `transmission-daemon` package, so a config directory made for it is taken
   over as it is;
@@ -163,8 +192,9 @@ docker build --target test -t torrwheel:test .
 
 Build arguments: `VERSION` (shown by the daemon as `4.1.3 (<VERSION>)` and in
 the page's footer), `COMMIT` and `BUILD_DATE` (the footer), `BUILD_JOBS`
-(parallel compile and test jobs, every core by default), `ALPINE_VERSION` and
-`NODE_VERSION`. The web UI is built in a stage of its own and copied into the
+(parallel compile and test jobs, every core by default), `ALPINE_VERSION`,
+`NODE_VERSION` and `DBIP_VERSION` (the month of the country database, moved
+by hand with a release). The web UI is built in a stage of its own and copied into the
 image; cmake does not touch it.
 
 ### Web UI development
@@ -207,3 +237,8 @@ is the one to keep.
 
 Transmission's terms, unchanged: GNU GPL v2 or v3, see [`COPYING`](COPYING).
 The fork's own changes are under the same terms.
+
+The image includes the "IP to Country Lite" database by
+[DB-IP](https://db-ip.com), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The flags in the
+web UI are from [flag-icons](https://github.com/lipis/flag-icons), MIT.
