@@ -186,6 +186,31 @@ void add_clickjacking_prevention_headers(struct evkeyvalq* headers)
     evhttp_add_header(headers, "Content-Security-Policy", "frame-ancestors 'self'");
 }
 
+// torrwheel: the web UI's own policy; it loads nothing from another origin and runs no inline script.
+void add_web_client_headers(struct evkeyvalq* headers)
+{
+    static auto constexpr Csp =
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+    evhttp_remove_header(headers, "X-Frame-Options");
+    evhttp_remove_header(headers, "Content-Security-Policy");
+    evhttp_add_header(headers, "X-Frame-Options", "DENY");
+    evhttp_add_header(headers, "Content-Security-Policy", Csp);
+    evhttp_add_header(headers, "X-Content-Type-Options", "nosniff");
+    evhttp_add_header(headers, "Referrer-Policy", "no-referrer");
+}
+
+// torrwheel: files under assets/ carry a content hash in their name; the page itself must be asked for again.
+[[nodiscard]] constexpr char const* web_client_cache_control(std::string_view subpath)
+{
+    if (tr_strv_starts_with(subpath, "assets/"sv))
+    {
+        return "public, max-age=31536000, immutable";
+    }
+
+    return tr_strv_ends_with(subpath, ".html"sv) ? "no-cache" : "public, max-age=86400";
+}
+
 void send_simple_response(struct evhttp_request* req, int code, char const* text = nullptr)
 {
     char const* code_text = tr_webGetResponseStr(code);
@@ -208,7 +233,7 @@ void send_simple_response(struct evhttp_request* req, int code, char const* text
 [[nodiscard]] constexpr char const* mimetype_guess(std::string_view path)
 {
     // these are the ones we need for serving the web client's files...
-    auto constexpr Types = std::array<std::pair<std::string_view, char const*>, 7>{ {
+    auto constexpr Types = std::array<std::pair<std::string_view, char const*>, 8>{ {
         { ".css"sv, "text/css" },
         { ".gif"sv, "image/gif" },
         { ".html"sv, "text/html" },
@@ -216,6 +241,7 @@ void send_simple_response(struct evhttp_request* req, int code, char const* text
         { ".js"sv, "application/javascript" },
         { ".png"sv, "image/png" },
         { ".svg"sv, "image/svg+xml" },
+        { ".woff2"sv, "font/woff2" },
     } };
 
     for (auto const& [suffix, mime_type] : Types)
@@ -277,7 +303,7 @@ void add_time_header(struct evkeyvalq* headers, char const* key, time_t now)
     evhttp_add_header(headers, key, fmt::format("{:%a %b %d %T %Y%n}", fmt::gmtime(now)).c_str());
 }
 
-void serve_file(struct evhttp_request* req, tr_rpc_server const* server, std::string_view filename)
+void serve_file(struct evhttp_request* req, tr_rpc_server const* server, std::string_view filename, char const* cache_control)
 {
     auto* const output_headers = evhttp_request_get_output_headers(req);
     if (auto const cmd = evhttp_request_get_command(req); cmd != EVHTTP_REQ_GET)
@@ -295,9 +321,8 @@ void serve_file(struct evhttp_request* req, tr_rpc_server const* server, std::st
         return;
     }
 
-    auto const now = tr_time();
-    add_time_header(output_headers, "Date", now);
-    add_time_header(output_headers, "Expires", now + (24 * 60 * 60));
+    add_time_header(output_headers, "Date", tr_time());
+    evhttp_add_header(output_headers, "Cache-Control", cache_control);
     evhttp_add_header(output_headers, "Content-Type", mimetype_guess(filename));
 
     auto* const response = make_response(req, server, std::string_view{ std::data(content), std::size(content) });
@@ -323,12 +348,11 @@ void handle_web_client(struct evhttp_request* req, tr_rpc_server const* server)
         return;
     }
 
-    // convert the URL path component (ex: "/transmission/web/images/favicon.png")
-    // into a filesystem path (ex: "/usr/share/transmission/web/images/favicon.png")
+    add_web_client_headers(evhttp_request_get_output_headers(req));
 
-    // remove the "/transmission/web/" prefix
-    static auto constexpr Web = "web/"sv;
-    auto subpath = std::string_view{ evhttp_request_get_uri(req) }.substr(std::size(server->url()) + std::size(Web));
+    // torrwheel: the web UI is served from the RPC URL's root (ex: "/assets/index.js"
+    // is "/usr/share/transmission/public_html/assets/index.js"), next to "rpc"
+    auto subpath = std::string_view{ evhttp_request_get_uri(req) }.substr(std::size(server->url()));
 
     // remove any trailing query / fragment
     subpath = subpath.substr(0, subpath.find_first_of("?#"sv));
@@ -360,7 +384,7 @@ void handle_web_client(struct evhttp_request* req, tr_rpc_server const* server)
     }
     else
     {
-        serve_file(req, server, tr_pathbuf{ server->web_client_dir_, '/', subpath });
+        serve_file(req, server, tr_pathbuf{ server->web_client_dir_, '/', subpath }, web_client_cache_control(subpath));
     }
 }
 
@@ -583,15 +607,18 @@ void handle_request(struct evhttp_request* req, void* arg)
 
     auto const* const uri = evhttp_request_get_uri(req);
     auto const uri_sv = std::string_view{ uri };
-    auto const location = tr_strv_starts_with(uri_sv, server->url()) ? uri_sv.substr(std::size(server->url())) : ""sv;
+    auto const under_url = tr_strv_starts_with(uri_sv, server->url());
+    auto const location = under_url ? uri_sv.substr(std::size(server->url())) : ""sv;
+    // torrwheel: "rpc" is the RPC; everything else under the URL is the web UI
+    auto const is_rpc = tr_strv_starts_with(location, "rpc"sv) &&
+        (std::size(location) == 3U || location[3] == '/' || location[3] == '?');
 
-    if (std::empty(location) || location == "web"sv)
+    if (!under_url)
     {
-        auto const new_location = fmt::format("{:s}web/", server->url());
-        evhttp_add_header(output_headers, "Location", new_location.c_str());
+        evhttp_add_header(output_headers, "Location", server->url().c_str());
         send_simple_response(req, HTTP_MOVEPERM, nullptr);
     }
-    else if (tr_strv_starts_with(location, "web/"sv))
+    else if (!is_rpc)
     {
         handle_web_client(req, server);
     }
@@ -635,18 +662,9 @@ void handle_request(struct evhttp_request* req, void* arg)
         send_simple_response(req, 409, body.c_str());
     }
 #endif
-    else if (tr_strv_starts_with(location, "rpc"sv))
-    {
-        handle_rpc(req, server);
-    }
     else
     {
-        tr_logAddWarn(
-            fmt::format(
-                fmt::runtime(_("Unknown URI from {host}: '{uri}'")),
-                fmt::arg("host", remote_host),
-                fmt::arg("uri", uri_sv)));
-        send_simple_response(req, HTTP_NOTFOUND, uri);
+        handle_rpc(req, server);
     }
 }
 
