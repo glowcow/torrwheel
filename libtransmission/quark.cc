@@ -106,6 +106,7 @@ auto constexpr MyStatic = std::array<std::string_view, TR_N_KEYS>{
     "corrupt"sv, // .resume
     "corruptEver"sv, // rpc
     "corrupt_ever"sv, // rpc
+    "country"sv, // rpc (torrwheel)
     "created by"sv, // .torrent
     "creation date"sv, // .torrent
     "creator"sv, // rpc
@@ -145,6 +146,7 @@ auto constexpr MyStatic = std::array<std::string_view, TR_N_KEYS>{
     "download_count"sv, // rpc
     "download_dir"sv, // daemon, gtk app, rpc, tr_session::Settings
     "download_dir_free_space"sv, // rpc
+    "download_dirs"sv, // rpc, tr_session::Settings (torrwheel)
     "download_limit"sv, // rpc
     "download_limited"sv, // rpc
     "download_queue_enabled"sv, // rpc, tr_session::Settings

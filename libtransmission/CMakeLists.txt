@@ -157,6 +157,8 @@ target_sources(${TR_NAME}
         tr-udp.cc
         tr-utp.cc
         tr-utp.h
+        torrwheel-geoip.cc
+        torrwheel-geoip.h
         transmission.h
         utils-ev.cc
         utils-ev.h
@@ -331,4 +333,17 @@ if(INSTALL_LIB)
             web.h
             ${CMAKE_CURRENT_BINARY_DIR}/version.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${TR_NAME})
+endif()
+
+# torrwheel: a peer's country, when libmaxminddb is there
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(MAXMINDDB IMPORTED_TARGET libmaxminddb)
+endif()
+if(MAXMINDDB_FOUND)
+    target_compile_definitions(${TR_NAME}
+        PRIVATE
+            WITH_MAXMINDDB
+            TORRWHEEL_COUNTRY_DB="${CMAKE_INSTALL_FULL_DATAROOTDIR}/${TR_NAME}/country.mmdb")
+    target_link_libraries(${TR_NAME} PRIVATE PkgConfig::MAXMINDDB)
 endif()

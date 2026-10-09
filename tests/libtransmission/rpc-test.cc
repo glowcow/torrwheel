@@ -662,6 +662,7 @@ TEST_F(RpcTest, sessionGet)
         TR_KEY_dht_enabled,
         TR_KEY_download_dir,
         TR_KEY_download_dir_free_space,
+        TR_KEY_download_dirs, // torrwheel
         TR_KEY_download_queue_enabled,
         TR_KEY_download_queue_size,
         TR_KEY_encryption,

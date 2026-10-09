@@ -39,6 +39,7 @@
 #include "libtransmission/session.h"
 #include "libtransmission/torrent-ctor.h"
 #include "libtransmission/torrent.h"
+#include "libtransmission/torrwheel-geoip.h"
 #include "libtransmission/tr-assert.h"
 #include "libtransmission/tr-strbuf.h"
 #include "libtransmission/utils.h"
@@ -619,8 +620,13 @@ namespace make_torrent_field_helpers
     for (size_t idx = 0U; idx != n_peers; ++idx)
     {
         auto const& peer = peers[idx];
-        auto peer_map = tr_variant::Map{ 19U };
+        auto peer_map = tr_variant::Map{ 20U };
         peer_map.try_emplace(TR_KEY_address, peer.addr);
+        // torrwheel: only when the database knows the address
+        if (auto country = torrwheel::country_of(peer.addr); !std::empty(country))
+        {
+            peer_map.try_emplace(TR_KEY_country, std::move(country));
+        }
         peer_map.try_emplace(TR_KEY_client_is_choked, peer.clientIsChoked);
         peer_map.try_emplace(TR_KEY_client_is_interested, peer.clientIsInterested);
         peer_map.try_emplace(TR_KEY_client_name, peer.client);
@@ -2598,6 +2604,22 @@ using SessionAccessors = std::pair<SessionGetter, SessionSetter>;
                 tr_sessionSetDeleteSource(&tgt, *val);
             }
         });
+
+    // torrwheel: read-only over the RPC, set in settings.json
+    map.try_emplace(
+        TR_KEY_download_dirs,
+        [](tr_session const& src) -> tr_variant
+        {
+            auto const& dirs = src.settings().download_dirs;
+            auto vec = tr_variant::Vector{};
+            vec.reserve(std::size(dirs));
+            for (auto const& dir : dirs)
+            {
+                vec.emplace_back(dir);
+            }
+            return tr_variant{ std::move(vec) };
+        },
+        nullptr);
 
     map.try_emplace(TR_KEY_units, [](tr_session const& /*src*/) -> tr_variant { return values_get_units(); }, nullptr);
 

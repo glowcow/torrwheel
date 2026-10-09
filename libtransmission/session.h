@@ -469,6 +469,8 @@ public:
         std::string blocklist_url = "http://www.example.com/blocklist";
         std::string default_trackers_str;
         std::string download_dir = tr_getDefaultDownloadDir();
+        // torrwheel: the directories a client offers to download to; the daemon itself does not use them
+        std::vector<std::string> download_dirs;
         std::string incomplete_dir = tr_getDefaultDownloadDir();
         std::string peer_congestion_algorithm;
         std::string script_torrent_added_filename;
@@ -499,6 +501,7 @@ public:
             Field<&Settings::default_trackers_str>{ TR_KEY_default_trackers },
             Field<&Settings::dht_enabled>{ TR_KEY_dht_enabled },
             Field<&Settings::download_dir>{ TR_KEY_download_dir },
+            Field<&Settings::download_dirs>{ TR_KEY_download_dirs },
             Field<&Settings::download_queue_enabled>{ TR_KEY_download_queue_enabled },
             Field<&Settings::download_queue_size>{ TR_KEY_download_queue_size },
             Field<&Settings::encryption_mode>{ TR_KEY_encryption },

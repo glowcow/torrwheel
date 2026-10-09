@@ -1,4 +1,4 @@
-// torrwheel: tests of the fork's own file placement rules.
+// torrwheel: tests of the fork's own file placement rules and settings.
 // License text can be found in the licenses/ folder.
 
 #include <algorithm>
@@ -15,6 +15,7 @@
 #include <libtransmission/quark.h>
 #include <libtransmission/torrent.h>
 #include <libtransmission/torrent-files.h>
+#include <libtransmission/torrwheel-geoip.h>
 #include <libtransmission/tr-strbuf.h>
 #include <libtransmission/variant.h>
 
@@ -36,6 +37,11 @@ protected:
             map->insert_or_assign(TR_KEY_download_dir, "Downloads"sv);
             map->insert_or_assign(TR_KEY_incomplete_dir, "Incomplete"sv);
             map->insert_or_assign(TR_KEY_incomplete_dir_enabled, true);
+
+            auto dirs = tr_variant::Vector{};
+            dirs.emplace_back("/Downloads"sv);
+            dirs.emplace_back("/Dumps"sv);
+            map->insert_or_assign(TR_KEY_download_dirs, std::move(dirs));
         }
 
         SessionTest::SetUp();
@@ -208,6 +214,29 @@ TEST_F(TorrwheelTest, renameActsOnBothDirs)
     EXPECT_TRUE(waitForFile(tor, 2, download_dir));
 
     tr_torrentRemove(tor, true, nullptr, nullptr);
+}
+
+TEST_F(TorrwheelTest, downloadDirsAreReadFromSettings)
+{
+    auto const& dirs = session_->settings().download_dirs;
+    ASSERT_EQ(2U, std::size(dirs));
+    EXPECT_EQ("/Downloads"sv, dirs[0]);
+    EXPECT_EQ("/Dumps"sv, dirs[1]);
+}
+
+TEST(TorrwheelGeoip, countryOfAnAddress)
+{
+    // The image installs the database here; a build without it has nothing to look up.
+    if (!tr_sys_path_exists("/usr/share/transmission/country.mmdb"))
+    {
+        GTEST_SKIP() << "no country database";
+    }
+
+    EXPECT_EQ("US"sv, torrwheel::country_of("8.8.8.8"));
+    EXPECT_EQ(2U, std::size(torrwheel::country_of("2a02:6b8::feed:ff")));
+    EXPECT_TRUE(std::empty(torrwheel::country_of("10.1.2.3")));
+    EXPECT_TRUE(std::empty(torrwheel::country_of("not an address")));
+    EXPECT_TRUE(std::empty(torrwheel::country_of(nullptr)));
 }
 
 } // namespace libtransmission::test
