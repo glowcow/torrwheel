@@ -80,16 +80,15 @@ export function Totals({ torrents }: { torrents: Torrent[] }) {
 
         {/* The daemon's other numbers ride the same baseline as the label. */}
         <div className="flex items-baseline mt-6 sm:mt-0 sm:ml-5 lg:ml-0">
-          <span aria-hidden="true" className="hidden lg:block relative top-[3px] w-px h-[28px] mx-5 bg-[var(--color-rule)]" />
+          {/* Drawn lines, 36px: the value-and-label stack is 30px of ink, and they overhang it by 3px each way. */}
+          <span aria-hidden="true" className="hidden lg:block relative top-[3px] w-px h-[36px] mx-5 bg-[var(--color-rule)]" />
           {items.map((it, i) => (
             <div key={it.key} className={cn("items-baseline", it.show)}>
               {i > 0 && (
                 <span
                   aria-hidden="true"
-                  className="select-none font-light leading-none text-[var(--color-rule)] px-2.5 sm:px-3 text-[28px] sm:text-[30px]"
-                >
-                  /
-                </span>
+                  className="relative top-[3px] w-[1.5px] h-[36px] mx-[15px] sm:mx-[18px] rotate-[16deg] bg-[var(--color-rule)]"
+                />
               )}
               <Tooltip text={t.statHint[it.key]}>
                 {/* The value is out of flow; min-width keeps a wide one off the next slash. */}
