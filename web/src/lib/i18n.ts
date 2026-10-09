@@ -44,6 +44,7 @@ const en = {
 
   headline: {
     downloading: (n: number) => `Downloading ${n} ${plural("en", n, { one: "torrent", other: "torrents" })}`,
+    moving: (n: number) => `Moving ${n} ${plural("en", n, { one: "torrent", other: "torrents" })} to disk`,
     seeding: (n: number) => `Seeding ${n} ${plural("en", n, { one: "torrent", other: "torrents" })}`,
     idle: "All quiet",
   },
@@ -180,6 +181,8 @@ const ru: Dict = {
   headline: {
     downloading: (n) =>
       `${plural("ru", n, { one: "Скачивается", other: "Скачиваются" })} ${n} ${plural("ru", n, { one: "торрент", few: "торрента", many: "торрентов", other: "торрента" })}`,
+    moving: (n) =>
+      `${plural("ru", n, { one: "Переносится", other: "Переносятся" })} на диск ${n} ${plural("ru", n, { one: "торрент", few: "торрента", many: "торрентов", other: "торрента" })}`,
     seeding: (n) =>
       `${plural("ru", n, { one: "Раздаётся", other: "Раздаются" })} ${n} ${plural("ru", n, { one: "торрент", few: "торрента", many: "торрентов", other: "торрента" })}`,
     idle: "Тишина",

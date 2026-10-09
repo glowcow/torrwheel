@@ -1,7 +1,7 @@
 import type { Torrent } from "../lib/api";
 import { bytesParts } from "../lib/format";
 import { useLang } from "../lib/i18n";
-import { statusKind } from "../lib/status";
+import { activityKind, statusKind } from "../lib/status";
 import { Tooltip } from "./Tooltip";
 import { cn } from "../lib/cn";
 
@@ -19,9 +19,11 @@ type Item = {
 export function Totals({ torrents }: { torrents: Torrent[] }) {
   const { t, locale } = useLang();
   const sum = (pick: (r: Torrent) => number) => torrents.reduce((total, r) => total + pick(r), 0);
-  const count = (kind: ReturnType<typeof statusKind>) => torrents.filter((r) => statusKind(r) === kind).length;
+  // By activity, so a torrent being moved to disk counts as the seed it is.
+  const count = (kind: ReturnType<typeof activityKind>) => torrents.filter((r) => activityKind(r) === kind).length;
   const downloading = count("downloading");
   const seeding = count("seeding");
+  const moving = torrents.filter((r) => statusKind(r) === "moving").length;
   const errors = count("error");
 
   const [down, downUnit] = bytesParts(sum((r) => r.rate_download), t.unit, locale);
@@ -50,9 +52,11 @@ export function Totals({ torrents }: { torrents: Torrent[] }) {
         <span className="text-[18px] font-semibold">
           {downloading > 0
             ? t.headline.downloading(downloading)
-            : seeding > 0
-              ? t.headline.seeding(seeding)
-              : t.headline.idle}
+            : moving > 0
+              ? t.headline.moving(moving)
+              : seeding > 0
+                ? t.headline.seeding(seeding)
+                : t.headline.idle}
         </span>
       </div>
 

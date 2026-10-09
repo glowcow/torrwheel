@@ -11,7 +11,7 @@ import { AddDialog } from "./components/AddDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Activity, getTorrents, removeTorrent, startTorrent, stopTorrent, type Torrent } from "./lib/api";
 import { useLang } from "./lib/i18n";
-import { statusKind } from "./lib/status";
+import { activityKind } from "./lib/status";
 import { cn } from "./lib/cn";
 
 // Rates and progress are the moving part.
@@ -23,7 +23,8 @@ const NO_TORRENTS: Torrent[] = [];
 // What a filter button holds; checking and queued show under "all" only.
 function inFilter(torrent: Torrent, filter: Filter): boolean {
   if (filter === "all") return true;
-  const kind = statusKind(torrent);
+  // By what the torrent does with peers: one being moved to disk is still seeding.
+  const kind = activityKind(torrent);
   if (filter === "downloading") return kind === "downloading" || (kind === "error" && torrent.left_until_done > 0);
   // A stopped torrent is under "paused" whether it is half-way or done.
   if (filter === "paused") return kind === "paused" || kind === "done";

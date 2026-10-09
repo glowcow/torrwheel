@@ -27,9 +27,9 @@ export function PeerList({ peers }: { peers: Peer[] }) {
           className="grid grid-cols-subgrid col-span-2 sm:col-span-3 items-center h-8 text-[11px] tabular-nums text-[var(--color-ink-soft)]"
         >
           <span className="flex items-center gap-2 min-w-0">
-            {/* A lock, not Transmission's flag letters: "DE" reads as a country. */}
+            {/* A lock, not Transmission's flag letters: "DE" reads as a country. Shut is `up`, open `warn`. */}
             <Tooltip text={`${peer.is_encrypted ? t.peerEncrypted : t.peerPlain}${peer.is_utp ? " · µTP" : ""}${peer.is_incoming ? ` · ${t.peerIncoming}` : ""}`}>
-              <span className="shrink-0 text-[var(--color-ink-muted)]">
+              <span className={peer.is_encrypted ? "shrink-0 text-[var(--color-up)]" : "shrink-0 text-[var(--color-warn)]"}>
                 {peer.is_encrypted ? (
                   <Lock aria-hidden="true" className="size-3.5" />
                 ) : (

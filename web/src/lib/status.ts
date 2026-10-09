@@ -42,6 +42,12 @@ export const isStopped = (torrent: Pick<Torrent, "status">) => torrent.status ==
 export function statusKind(torrent: Subject): StatusKind {
   if (torrent.error !== 0) return "error";
   if ((torrent.move_bytes_total ?? 0) > 0) return "moving";
+  return activityKind(torrent);
+}
+
+/** The same without the move: a torrent whose files are being moved still seeds, or stays paused. */
+export function activityKind(torrent: Subject): StatusKind {
+  if (torrent.error !== 0) return "error";
   switch (torrent.status) {
     case Activity.stopped:
       // Stopped with everything wanted on disk is "done", not "paused".
