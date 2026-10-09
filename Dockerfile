@@ -1,4 +1,19 @@
 ARG ALPINE_VERSION=3.24.2
+ARG NODE_VERSION=26.10.0
+
+FROM node:${NODE_VERSION}-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+# Build stamp for the footer; Vite exposes only VITE_* variables.
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
+ENV VITE_APP_VERSION=$VERSION \
+    VITE_APP_COMMIT=$COMMIT \
+    VITE_APP_BUILD_DATE=$BUILD_DATE
+RUN npm run build
 
 FROM alpine:${ALPINE_VERSION} AS build
 RUN apk add --no-cache build-base cmake samurai pkgconf linux-headers curl-dev openssl-dev libpsl-dev
@@ -13,7 +28,7 @@ RUN echo "${VERSION}" > REVISION \
        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
        -DENABLE_DAEMON=ON -DENABLE_UTILS=ON -DENABLE_TESTS=ON \
        -DENABLE_CLI=OFF -DENABLE_GTK=OFF -DENABLE_QT=OFF -DENABLE_MAC=OFF \
-       -DENABLE_NLS=OFF -DINSTALL_DOC=OFF -DINSTALL_WEB=ON -DREBUILD_WEB=OFF \
+       -DENABLE_NLS=OFF -DINSTALL_DOC=OFF -DINSTALL_WEB=OFF -DREBUILD_WEB=OFF \
        -DRUN_CLANG_TIDY=OFF -DWITH_CRYPTO=openssl -DWITH_SYSTEMD=OFF \
        -DUSE_SYSTEM_EVENT2=OFF -DUSE_SYSTEM_DEFLATE=OFF -DUSE_SYSTEM_DHT=OFF \
        -DUSE_SYSTEM_MINIUPNPC=OFF -DUSE_SYSTEM_NATPMP=OFF -DUSE_SYSTEM_UTP=OFF \
@@ -35,6 +50,7 @@ RUN apk add --no-cache libcurl libpsl libstdc++ ca-certificates \
     && install -d -o torrwheel -g torrwheel \
        /etc/transmission-daemon /var/lib/transmission-daemon
 COPY --from=build /out/ /
+COPY --from=web /web/dist /usr/share/transmission/public_html
 EXPOSE 9091
 USER torrwheel
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
