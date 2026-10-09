@@ -1,0 +1,243 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@theme {
+  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Classic light; `.dark` and `.warm` on <html> replace the values. */
+  --color-paper:        #FAFAFA;
+  --color-paper-soft:   #EBEBEB;
+  --color-ink:          #111111;
+  --color-ink-soft:     #666666;
+  --color-ink-muted:    #8C8C8C;
+  --color-rule:         #E2E2E2;
+  --color-accent:       #1F6FEB;
+  --color-accent-hover: #1A5FCC;
+  --color-on-accent:    #FFFFFF;
+
+  /* Status: the only saturated colours, the same in both themes. */
+  --color-up:   #17C964;
+  --color-warn: #F5A524;
+  --color-down: #FF3B30;
+
+  --color-thumb:       color-mix(in srgb, var(--color-ink) 20%, transparent);
+  --color-thumb-hover: color-mix(in srgb, var(--color-ink) 32%, transparent);
+
+  /* The veil behind a modal: dark in both themes. */
+  --color-scrim: color-mix(in srgb, var(--color-ink) 60%, transparent);
+
+  /* A torrent's status and its progress bar: the same in every theme and scheme. */
+  --color-status-move:     #8B5CF6;
+  --color-status-idle:     #8C8C8C;
+  --color-bar-track:       rgb(128 128 128 / 0.25);
+  --color-bar-ink:         #111111;
+
+  /* A list row under the pointer or the keyboard focus. */
+  --color-row-hover: color-mix(in srgb, var(--color-accent) 10%, transparent);
+
+  /* Cast by a sticky bar only while the page is scrolled under it. */
+  --shadow-header: 0 12px 26px -14px color-mix(in srgb, var(--color-ink) 25%, transparent);
+  /* Under the settings panel and a dropdown. */
+  --shadow-menu: 0 10px 24px -12px color-mix(in srgb, var(--color-ink) 30%, transparent);
+}
+
+@layer base {
+  /* Two rows below sm, one from sm up; whatever sticks under the header reads it. */
+  :root {
+    --header-h: 6.25rem;
+  }
+  @media (min-width: 40rem) {
+    :root {
+      --header-h: 4rem;
+    }
+  }
+
+  /* /theme-init.js sets both classes before the first paint. */
+  .dark {
+    --color-paper:        #161616;
+    --color-paper-soft:   #282828;
+    --color-ink:          #F2F2F2;
+    --color-ink-soft:     #9E9E9E;
+    --color-ink-muted:    #757575;
+    --color-rule:         #303030;
+    --color-accent:       #4C8DF6;
+    --color-accent-hover: #3D7DE0;
+
+    --color-row-hover: color-mix(in srgb, var(--color-accent) 15%, transparent);
+    --color-scrim:     rgba(0, 0, 0, 0.6);
+
+    /* A dark ground swallows a light shadow. */
+    --shadow-header: 0 12px 26px -12px rgba(0, 0, 0, 0.9);
+    --shadow-menu:   0 10px 24px -10px rgba(0, 0, 0, 0.8);
+  }
+
+  .warm {
+    --color-paper:        #FAF9F5;
+    --color-paper-soft:   #EDEBE3;
+    --color-ink:          #141413;
+    --color-ink-soft:     #66655F;
+    --color-ink-muted:    #8C8A82;
+    --color-rule:         #E6E3DA;
+    --color-accent:       #D97757;
+    --color-accent-hover: #C4623F;
+  }
+
+  .warm.dark {
+    --color-paper:        #1A1A18;
+    --color-paper-soft:   #2B2B28;
+    --color-ink:          #F5F4ED;
+    --color-ink-soft:     #A3A198;
+    --color-ink-muted:    #7A7972;
+    --color-rule:         #33332F;
+  }
+
+  /* Bright elements reach into Display P3 where the browser parses it; the
+     sRGB values above stay as the fallback. After the themes, to win over them. */
+  @supports (color: color(display-p3 1 1 1)) {
+    :root {
+      --color-status-move: color(display-p3 0.52 0.37 0.94);
+      --color-up:     color(display-p3 0.09 0.78 0.38);
+      --color-warn:   color(display-p3 0.96 0.64 0.11);
+      --color-down:   color(display-p3 1 0.21 0.16);
+      --color-accent: color(display-p3 0.122 0.435 0.922);
+    }
+    .dark {
+      --color-accent: color(display-p3 0.298 0.553 0.965);
+    }
+    .warm {
+      --color-accent: color(display-p3 0.851 0.467 0.341);
+    }
+  }
+
+  html, body, #root {
+    min-height: 100svh;
+  }
+
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01", "ss03";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    letter-spacing: 0;
+    color: var(--color-ink);
+    background-color: var(--color-paper);
+    overscroll-behavior-y: none;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  /* Keyboard focus is always visible; the pointer leaves no ring. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* Firefox reads the standard properties, Blink/WebKit the pseudo-elements. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-thumb) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--color-thumb);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 4px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-thumb-hover);
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .swiss-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-soft);
+  }
+
+  .swiss-rule {
+    border-bottom: 1px solid var(--color-rule);
+  }
+  .swiss-rule-top {
+    border-top: 1px solid var(--color-rule);
+  }
+
+  /* Placeholder the size of what will replace it. */
+  .swiss-skeleton {
+    background-color: var(--color-rule);
+    border-radius: 4px;
+    animation: swiss-skeleton-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes swiss-skeleton-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+
+/* The meta row slides in first, the cards fade in on a settled row. Keyframes
+   run on the compositor, so committing 25 cards cannot drop their frames. */
+@keyframes swiss-meta-enter {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes swiss-results-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.swiss-meta-enter {
+  animation: swiss-meta-enter 360ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.swiss-results-enter {
+  animation: swiss-results-enter 320ms cubic-bezier(0.4, 0, 0.2, 1) 120ms both;
+}
+
+/* A modal is always mounted and opened by CSS. Closing keeps it painted
+   through the fade, then visibility takes it out of hit-testing. */
+.swiss-drawer-open {
+  visibility: visible;
+}
+.swiss-drawer-closed {
+  visibility: hidden;
+  transition: visibility 0s linear 200ms;
+}
+.swiss-drawer-backdrop {
+  transition: opacity 180ms ease-out;
+}
+.swiss-drawer-closed .swiss-drawer-backdrop {
+  opacity: 0;
+}
+.swiss-drawer-panel {
+  transition:
+    opacity 180ms ease-out,
+    transform 180ms ease-out;
+}
+.swiss-drawer-closed .swiss-drawer-panel {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+}
+
+/* A bar that is filling: the stripe drifts while bytes arrive. */
+.swiss-progress {
+  transition: clip-path 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
