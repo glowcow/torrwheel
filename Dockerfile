@@ -1,5 +1,7 @@
 ARG ALPINE_VERSION=3.24.2
 ARG NODE_VERSION=26.10.0
+# DB-IP's monthly "IP to Country Lite"; moved by hand with a release of the fork.
+ARG DBIP_VERSION=2026-10
 
 FROM node:${NODE_VERSION}-alpine AS web
 WORKDIR /web
@@ -15,8 +17,14 @@ ENV VITE_APP_VERSION=$VERSION \
     VITE_APP_BUILD_DATE=$BUILD_DATE
 RUN npm run build
 
+FROM alpine:${ALPINE_VERSION} AS geoip
+ARG DBIP_VERSION
+RUN wget -qO- "https://download.db-ip.com/free/dbip-country-lite-${DBIP_VERSION}.mmdb.gz" | gunzip > /country.mmdb
+
 FROM alpine:${ALPINE_VERSION} AS build
-RUN apk add --no-cache build-base cmake samurai pkgconf linux-headers curl-dev openssl-dev libpsl-dev
+RUN apk add --no-cache build-base cmake samurai pkgconf linux-headers curl-dev openssl-dev libpsl-dev libmaxminddb-dev
+# Where the daemon looks for it; here for the tests.
+COPY --from=geoip /country.mmdb /usr/share/transmission/country.mmdb
 WORKDIR /src
 COPY . .
 # Shown as "4.1.3 (<VERSION>)" by the daemon; cmake keeps ten characters of it.
@@ -43,7 +51,7 @@ RUN ctest --test-dir /build -j "${BUILD_JOBS:-$(nproc)}" --output-on-failure --r
 
 FROM alpine:${ALPINE_VERSION}
 # uid and gid of Debian's transmission-daemon package: a config volume made for it is taken over.
-RUN apk add --no-cache libcurl libpsl libstdc++ ca-certificates \
+RUN apk add --no-cache libcurl libpsl libmaxminddb libstdc++ ca-certificates \
     && addgroup -S -g 101 torrwheel \
     && adduser -S -D -H -u 100 -G torrwheel -h /var/lib/transmission-daemon \
        -s /sbin/nologin torrwheel \
@@ -51,6 +59,7 @@ RUN apk add --no-cache libcurl libpsl libstdc++ ca-certificates \
        /etc/transmission-daemon /var/lib/transmission-daemon
 COPY --from=build /out/ /
 COPY --from=web /web/dist /usr/share/transmission/public_html
+COPY --from=geoip /country.mmdb /usr/share/transmission/country.mmdb
 EXPOSE 9091
 USER torrwheel
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
