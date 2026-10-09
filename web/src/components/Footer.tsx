@@ -53,6 +53,16 @@ export function Footer() {
             <span aria-hidden="true" className="swiss-skeleton h-2.5 w-24" />
           )}
         </span>
+
+        {/* The country database's licence asks for this line. */}
+        <a
+          href="https://db-ip.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-[4px] hover:text-[var(--color-accent)] transition-colors duration-150"
+        >
+          {t.geoCredit}
+        </a>
       </div>
     </footer>
   );

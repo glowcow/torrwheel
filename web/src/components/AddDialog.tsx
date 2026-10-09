@@ -39,12 +39,12 @@ export function AddDialog({ open, onClose }: { open: boolean; onClose: () => voi
     enabled: open && !!spaceDir,
     placeholderData: keepPreviousData,
   });
-  // On offer: the daemon's own directory, where its torrents already lie, and
-  // what this viewer added to before. The list's cache is read, not fetched.
+  // On offer: the daemon's list and its own directory, then where its torrents
+  // already lie and what this viewer added to before. The cache is read, not fetched.
   const { data: torrents } = useQuery({ queryKey: ["torrents"], queryFn: getTorrents, enabled: false });
   const [remembered, setRemembered] = useState(readDirs);
   const dirs = useMemo(
-    () => [...new Set([session?.download_dir, ...(torrents ?? []).map((r) => r.download_dir), ...remembered])]
+    () => [...new Set([...(session?.download_dirs ?? []), session?.download_dir, ...(torrents ?? []).map((r) => r.download_dir), ...remembered])]
       .filter((d): d is string => !!d),
     [session, torrents, remembered],
   );

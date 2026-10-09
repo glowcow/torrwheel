@@ -152,6 +152,7 @@ const en = {
   unit: { s: "s", m: "m", h: "h", d: "d", b: "B", kb: "KB", mb: "MB", gb: "GB", tb: "TB" },
 
   built: "built",
+  geoCredit: "IP geolocation by DB-IP",
   daemon: "Daemon",
   unreachable: "unreachable",
   daemonUnreachable: "Daemon unreachable",
@@ -288,6 +289,7 @@ const ru: Dict = {
   unit: { s: "с", m: "м", h: "ч", d: "д", b: "Б", kb: "КБ", mb: "МБ", gb: "ГБ", tb: "ТБ" },
 
   built: "собрано",
+  geoCredit: "Геолокация по IP — DB-IP",
   daemon: "Демон",
   unreachable: "недоступен",
   daemonUnreachable: "Демон недоступен",

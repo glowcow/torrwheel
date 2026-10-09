@@ -139,7 +139,8 @@ const DETAIL_FIELDS = [
   "tracker_stats",
 ];
 
-export type Session = { version: string; download_dir: string };
+/** `download_dirs`: the directories on offer when adding; absent in a daemon without the key. */
+export type Session = { version: string; download_dir: string; download_dirs?: string[] };
 export type FreeSpace = { path: string; size_bytes: number; total_size: number };
 
 /** A magnet link or URL, or the content of a .torrent file in base64. */
@@ -191,7 +192,7 @@ export const getTorrent = (id: number) =>
     (r) => r.torrents[0] ?? null,
   );
 
-export const getSession = () => rpc<Session>("session_get", { fields: ["version", "download_dir"] });
+export const getSession = () => rpc<Session>("session_get", { fields: ["version", "download_dir", "download_dirs"] });
 export const getFreeSpace = (path: string) => rpc<FreeSpace>("free_space", { path });
 
 export const startTorrent = (id: number) => rpc("torrent_start", { ids: [id] });
