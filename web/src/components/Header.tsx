@@ -36,7 +36,7 @@ export function Header({ ref, query, onQueryChange, onReset, onAdd }: Props) {
         <button
           type="button"
           onClick={onReset}
-          className="order-1 sm:order-none shrink-0 select-none cursor-pointer rounded-md lg:justify-self-start font-semibold text-[17px] tracking-[-0.01em]"
+          className="order-1 sm:order-none shrink-0 select-none cursor-pointer rounded-md lg:justify-self-start font-display font-medium text-[26px] leading-none lining-nums"
         >
           Torrwheel
         </button>
