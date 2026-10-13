@@ -343,6 +343,26 @@ TEST_F(TorrwheelMoverTest, copiesEveryFileUnderItsTemporaryName)
     }
 }
 
+TEST_F(TorrwheelMoverTest, aFileLargerThanTheFlushWindowIsCopiedWhole)
+{
+    // two windows and a tail: the copy lets go of its pages twice on the way
+    auto const size = static_cast<size_t>(2U * torrwheel::Mover::FlushWindow + 17U);
+    auto const files = std::vector<torrwheel::Mover::File>{ makeFile(0, size) };
+    auto progress = std::make_shared<torrwheel::Mover::Progress>();
+    auto mediator = std::make_unique<RecordingMediator>();
+    auto done = mediator->future();
+
+    auto mover = torrwheel::Mover{};
+    mover.add(1, files, progress, std::move(mediator));
+
+    ASSERT_EQ(std::future_status::ready, done.wait_for(MaxWait));
+    auto const result = done.get();
+    EXPECT_FALSE(result.cancelled);
+    EXPECT_FALSE(result.failed);
+    EXPECT_EQ(size, progress->bytes_done);
+    EXPECT_EQ(read_whole_file(files[0].src), read_whole_file(torrwheel::Mover::tmp_path(files[0].dst)));
+}
+
 TEST_F(TorrwheelMoverTest, anErrorEndsTheJobAndLeavesNoTemporaryFile)
 {
     auto files = std::vector<torrwheel::Mover::File>{ makeFile(0, 100U), makeFile(1, 100U) };

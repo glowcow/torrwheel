@@ -17,6 +17,10 @@
 #include <unistd.h> // fsync()
 #endif
 
+#ifdef __linux__
+#include <fcntl.h> // posix_fadvise(), sync_file_range()
+#endif
+
 #include "libtransmission/transmission.h"
 
 #include "libtransmission/error.h"
@@ -46,6 +50,25 @@ auto constexpr ChunkSize = uint64_t{ 1024U * 1024U };
 
     error.set_from_errno(errno);
     return false;
+#endif
+}
+
+// Writes `[begin, end)` of the copy out and lets go of both files' cached pages, so a copy
+// of any size holds one window of memory and does not stall the threads around it.
+void release_window(tr_sys_file_t in, tr_sys_file_t out, uint64_t begin, uint64_t end)
+{
+#ifdef __linux__
+    auto const offset = static_cast<off_t>(begin);
+    auto const length = static_cast<off_t>(end - begin);
+    auto const wait_for_it = SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE | SYNC_FILE_RANGE_WAIT_AFTER;
+    (void)sync_file_range(out, offset, length, wait_for_it);
+    (void)posix_fadvise(out, offset, length, POSIX_FADV_DONTNEED);
+    (void)posix_fadvise(in, offset, length, POSIX_FADV_DONTNEED);
+#else
+    (void)in;
+    (void)out;
+    (void)begin;
+    (void)end;
 #endif
 }
 } // namespace
@@ -212,6 +235,7 @@ bool Mover::copy(File const& file, Progress& progress, tr_error& error)
     auto buffer = std::vector<std::byte>(ChunkSize);
     auto const started_at = std::chrono::steady_clock::now();
     auto copied = uint64_t{};
+    auto released = uint64_t{};
     auto ok = true;
 
     while (ok && !cancel_current_)
@@ -246,6 +270,12 @@ bool Mover::copy(File const& file, Progress& progress, tr_error& error)
         {
             copied += n_read;
             progress.bytes_done += n_read;
+
+            if (copied - released >= FlushWindow)
+            {
+                release_window(in, out, released, copied);
+                released = copied;
+            }
 
             if (throttle_bps_ != 0U)
             {

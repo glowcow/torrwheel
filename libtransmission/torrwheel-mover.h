@@ -31,6 +31,9 @@ class Mover
 public:
     static auto constexpr TmpSuffix = std::string_view{ ".tw-move" };
 
+    // A copy is written out and dropped from the page cache this many bytes at a time.
+    static auto constexpr FlushWindow = uint64_t{ 16U * 1024U * 1024U };
+
     struct File
     {
         tr_file_index_t index = {};
