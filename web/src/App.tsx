@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient, keepPreviousData } from "@tansta
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { Totals } from "./components/Totals";
-import { SortControl, type Sort } from "./components/SortControl";
+import { SortControl } from "./components/SortControl";
 import { StatusFilter, type Filter } from "./components/StatusFilter";
 import { TorrentRow } from "./components/TorrentRow";
 import { DetailDrawer } from "./components/DetailDrawer";
@@ -11,6 +11,7 @@ import { AddDialog } from "./components/AddDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { Activity, getTorrents, removeTorrent, startTorrent, stopTorrent, type Torrent } from "./lib/api";
 import { useLang } from "./lib/i18n";
+import { DEFAULT_SORT, readSort, rememberSort, type Sort } from "./lib/sort";
 import { activityKind } from "./lib/status";
 import { cn } from "./lib/cn";
 
@@ -49,7 +50,12 @@ function App() {
   const { t, locale } = useLang();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [sort, setSort] = useState<Sort>({ key: "added", dir: "desc" });
+  // The order outlives a reload; the filter and the name do not.
+  const [sort, setSortState] = useState<Sort>(readSort);
+  const setSort = useCallback((next: Sort) => {
+    setSortState(next);
+    rememberSort(next);
+  }, []);
   // The last viewed id outlives the close, so the modal keeps its content
   // through the closing transition; drawerOpen alone shows it.
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -143,7 +149,7 @@ function App() {
         onReset={() => {
           setQuery("");
           setFilter("all");
-          setSort({ key: "added", dir: "desc" });
+          setSort(DEFAULT_SORT);
           setDrawerOpen(false);
           window.scrollTo({ top: 0, behavior: "smooth" });
         }}

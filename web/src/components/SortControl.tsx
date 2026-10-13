@@ -1,12 +1,7 @@
 import { ArrowDown, ArrowUp, CaseSensitive, Clock, HardDrive, Percent, type LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn";
 import { useLang } from "../lib/i18n";
-
-export type SortKey = "added" | "name" | "size" | "progress";
-export type SortDir = "desc" | "asc";
-export type Sort = { key: SortKey; dir: SortDir };
-
-const KEYS: SortKey[] = ["added", "name", "size", "progress"];
+import { SORT_KEYS, type Sort, type SortKey } from "../lib/sort";
 
 // Below 360 px the words do not fit one row (measured in Russian): icons stand in.
 const ICON: Record<SortKey, LucideIcon> = { added: Clock, name: CaseSensitive, size: HardDrive, progress: Percent };
@@ -18,7 +13,7 @@ export function SortControl({ value, onChange }: { value: Sort; onChange: (sort:
   return (
     <div className="flex items-center gap-3 flex-nowrap">
       <span className="swiss-eyebrow hidden lg:inline">{t.sortLabel}</span>
-      {KEYS.map((key, i) => {
+      {SORT_KEYS.map((key, i) => {
         const active = value.key === key;
         const Icon = ICON[key];
         return (
