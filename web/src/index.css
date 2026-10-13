@@ -32,6 +32,7 @@
   /* A torrent's status and its progress bar: the same in every theme and scheme. */
   --color-status-move:     #8B5CF6;
   --color-status-idle:     #8C8C8C;
+  --color-status-seed:     color-mix(in srgb, var(--color-up) 40%, transparent);
   --color-bar-track:       rgb(128 128 128 / 0.25);
   --color-bar-ink:         #111111;
 

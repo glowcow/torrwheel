@@ -30,6 +30,9 @@ export const TorrentRow = memo(function TorrentRow({ torrent, onSelect, onToggle
   const stopped = isStopped(torrent);
   // A move, a check and a magnet's metadata have a share of their own.
   const bar = statusShare(torrent, kind) ?? torrent.percent_done;
+  // A seed has nothing left to watch: its row steps back behind the ones still arriving.
+  const faded = kind === "seeding";
+  const color = faded ? "var(--color-status-seed)" : STATUS_COLOR[kind];
 
   return (
     <div
@@ -54,7 +57,13 @@ export const TorrentRow = memo(function TorrentRow({ torrent, onSelect, onToggle
     >
       {/* Three lines: name and size, the bar across the whole row, status and rates. */}
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 sm:gap-x-6 gap-y-2 items-center px-3 sm:px-4">
-        <h3 className="font-semibold text-[14px] sm:text-[15px] leading-snug tracking-[-0.01em] truncate group-hover:text-[var(--color-accent)] transition-colors duration-150">
+        <h3
+          className={cn(
+            "font-semibold text-[14px] sm:text-[15px] leading-snug tracking-[-0.01em] truncate",
+            "group-hover:text-[var(--color-accent)] transition-colors duration-150",
+            faded && "text-[var(--color-ink-soft)]",
+          )}
+        >
           {torrent.name}
         </h3>
         <div className="justify-self-end flex items-center gap-1 text-[12px] tabular-nums whitespace-nowrap">
@@ -79,8 +88,12 @@ export const TorrentRow = memo(function TorrentRow({ torrent, onSelect, onToggle
           {/* The filled part repeats the figure in its own ink and is clipped to the share. */}
           <span
             aria-hidden="true"
-            className="swiss-progress absolute inset-0 grid place-items-center text-[var(--color-bar-ink)]"
-            style={{ backgroundColor: STATUS_COLOR[kind], clipPath: `inset(0 ${(1 - bar) * 100}% 0 0)` }}
+            className={cn(
+              "swiss-progress absolute inset-0 grid place-items-center",
+              // The pale fill is too close to the track for the bar's own ink.
+              faded ? "text-[var(--color-ink)]" : "text-[var(--color-bar-ink)]",
+            )}
+            style={{ backgroundColor: color, clipPath: `inset(0 ${(1 - bar) * 100}% 0 0)` }}
           >
             {formatPercent(bar, locale)}
           </span>
@@ -92,10 +105,10 @@ export const TorrentRow = memo(function TorrentRow({ torrent, onSelect, onToggle
           <span
             aria-hidden="true"
             className="size-2 shrink-0 rounded-full"
-            style={{ backgroundColor: STATUS_COLOR[kind] }}
+            style={{ backgroundColor: color }}
           />
           <span className="truncate tabular-nums leading-4">
-            <span className="font-medium" style={{ color: STATUS_COLOR[kind] }}>
+            <span className="font-medium" style={{ color }}>
               {kind === "error" ? torrent.error_string || t.status.error : t.status[kind]}
             </span>
             {kind === "downloading" && (
