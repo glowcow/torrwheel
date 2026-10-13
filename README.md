@@ -88,6 +88,12 @@ daemon:
   both zero when nothing is being copied. The torrent's `status` does not
   change.
 
+The copy does not pile up in the page cache: every 16 MiB it waits for what
+it wrote to reach the disk and drops those pages, of the source and of the
+copy. A file of any size then takes one window of memory, so a container
+with a memory limit is not pushed against it, and the copy runs at the speed
+of the target disk.
+
 Within one filesystem a move is still a rename and takes no time.
 
 What happens in the middle of a copy:
@@ -131,9 +137,10 @@ torrwheel builds the list on the next request, as Transmission did before
 Transmission's web client is replaced by a single page in `web/` — React,
 TypeScript, Vite, Tailwind — that talks to the daemon over the same RPC:
 
-- the list of torrents with a name filter, a status filter and a sort, each
-  row with its state, share done, size, both rates and buttons to pause or
-  resume and to remove;
+- the list of torrents with a name filter, a status filter and a sort that
+  the browser remembers, each row with its state, share done, size, both
+  rates and buttons to pause or resume and to remove; a torrent that only
+  seeds is drawn paler than the ones still arriving;
 - the daemon's totals above the list: download and upload rate, bytes left,
   counts by state, free space in the download directory;
 - a torrent's details: its numbers, its location and hash, pause, verify,
